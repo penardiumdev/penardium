@@ -69,6 +69,39 @@
             height: fit-content;
         }
 
+        .video-wrapper {
+            max-width: 420px;
+            margin: 0 auto;
+            padding: 20px 0;
+        }
+
+        .video-container {
+            position: relative;
+            padding-bottom: 56.25%;
+            /* 16:9 aspect ratio */
+            height: 0;
+            overflow: hidden;
+            width: 100%;
+            background: #000;
+        }
+
+        .video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+
+        /* Responsive Image */
+        .content img {
+            max-width: 69%;
+            height: auto;
+            margin: 32px 0;
+        }
+
+
         h1 {
             font-size: 3rem;
             text-transform: uppercase;
@@ -106,18 +139,19 @@
 
     <div class="content">
         <h1>Penardium</h1>
-        <div style="text-align: center; padding: 20px; background: #000;">
-            <iframe width="560" height="315"
-                src="https://www.youtube.com/embed/J0K5yfj6qmc"
-                title="YouTube video player"
-                frameborder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                allowfullscreen>
-            </iframe>
+        <div class="video-wrapper">
+            <div class="video-container">
+                <iframe src="https://www.youtube.com/embed/J0K5yfj6qmc" title="YouTube video player"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowfullscreen>
+                </iframe>
+            </div>
         </div>
+
         <p>Penardium Industries stands at the intersection of cutting-edge technology, innovation, and cybersecurity,
             leading the way in developing groundbreaking solutions that help shape the future of surveillance and
-            AI-powered systems. Founded on the principles of pushing the boundaries of what's possible, Penardium Industries
+            AI-powered systems. Founded on the principles of pushing the boundaries of what's possible, Penardium
+            Industries
             has become a key player in the rapidly evolving landscape of technology, where its contributions are both
             impactful and transformative.
 
@@ -129,7 +163,8 @@
             ensuring that each product is not only at the forefront of the market but is built to address real-world
             challenges effectively.
 
-            A major focus of Penardium Industries is its state-of-the-art surveillance systems, which utilize smart cameras
+            A major focus of Penardium Industries is its state-of-the-art surveillance systems, which utilize smart
+            cameras
             and sensors to monitor and analyze environments in real-time. These systems integrate seamlessly into
             existing security frameworks, providing detailed insights and actionable data to stakeholders. Whether it’s
             monitoring large urban areas, securing corporate facilities, or enhancing public safety, the company’s
@@ -160,9 +195,11 @@
             streamline access control in sensitive areas, while also improving overall operational workflow by reducing
             the need for manual oversight.
 
-            The company’s vision extends beyond just product development—Penardium Industries is actively shaping the future
+            The company’s vision extends beyond just product development—Penardium Industries is actively shaping the
+            future
             of technological ecosystems through strategic partnerships, research collaborations, and thought leadership.
-            By forging relationships with academic institutions and other industry giants, Penardium Industries ensures it
+            By forging relationships with academic institutions and other industry giants, Penardium Industries ensures
+            it
             remains on the cutting edge of technological advancements, always working to incorporate the latest
             innovations into its products.
 
@@ -173,7 +210,7 @@
             more interconnected and technology continues to evolve, Penardium Industries stands ready to lead the charge
             into the future, empowering organizations and individuals alike to thrive in an increasingly complex digital
             world.</p>
-        <img src="penardiumbot.PNG" alt="" style="width: 420px; margin: 32px;">
+        <img src="penardiumbot.PNG" alt="">
 
     </div>
 </body>
