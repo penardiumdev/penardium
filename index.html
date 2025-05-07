@@ -25,6 +25,33 @@
             height: 100vh;
             /* overflow: hidden; */
         }
+        
+        nav {
+            width: 100%;
+            background: #000;
+            border-bottom: 2px solid #0f0;
+            padding: 16px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+        }
+
+        nav a {
+            color: #0f0;
+            text-decoration: none;
+            margin: 0 20px;
+            font-size: 1.1rem;
+            text-shadow: 0 0 5px #0f0;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: #fff;
+        }
+
 
         /* Matrix Effect */
         .matrix {
@@ -65,7 +92,7 @@
             background: rgba(0, 0, 0, 0.7);
             border-radius: 10px;
             box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
-            margin-top: 64px;
+            margin-top: 128px;
             margin-bottom: 64px;
             height: fit-content;
         }
@@ -125,6 +152,14 @@
 </head>
 
 <body>
+
+    <nav>
+        <a href="index.html">Home</a>
+        <a href="about.html">About Us</a>
+        <a href="contact.html">Contact</a>
+        <a href="projects.html">Projects</a>
+    </nav>
+
     <div class="matrix">
         <!-- Matrix Rain Effect (Random Characters) -->
         <span style="left: 10%; animation-duration: 3s;">P</span>
