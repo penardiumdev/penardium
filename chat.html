@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penardium</title>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <style>
+        /* Basic Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Background and Full-Page Layout */
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            /* align-items: center; */
+            height: 100vh;
+            background-image: url('./chatbot.gif');
+            /* overflow: hidden; */
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center center;
+        }
+
+        nav {
+            width: 100%;
+            background: #000;
+            border-bottom: 2px solid #0f0;
+            padding: 16px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+        }
+
+        nav a {
+            color: #0f0;
+            text-decoration: none;
+            margin: 0 20px;
+            font-size: 1.1rem;
+            text-shadow: 0 0 5px #0f0;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: #fff;
+        }
+
+
+        /* Matrix Effect */
+        .matrix {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: -1;
+        }
+
+        .matrix span {
+            position: absolute;
+            top: -100%;
+            font-size: 20px;
+            color: #0f0;
+            white-space: nowrap;
+            animation: drop 4s linear infinite;
+        }
+
+        @keyframes drop {
+            0% {
+                top: -100%;
+            }
+
+            100% {
+                top: 100%;
+            }
+        }
+
+        /* Main Content Area */
+        .content {
+            text-align: center;
+            z-index: 1;
+            padding: 20px;
+            max-width: 80%;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+            margin-top: 128px;
+            margin-bottom: 64px;
+            height: fit-content;
+        }
+
+        /* Responsive Image */
+        .content img {
+            max-width: 69%;
+            height: auto;
+            margin: 32px 0;
+        }
+
+        h1 {
+            font-size: 3rem;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        p {
+            font-size: 1.2rem;
+            line-height: 1.5;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        /* Neon Glowing Text */
+        h1,
+        p {
+            text-shadow: 0 0 10px #0f0, 0 0 20px #0f0, 0 0 30px #0f0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <a href="index.html">Home</a>
+        <a href="about.html">About Us</a>
+        <a href="contact.html">Contact</a>
+        <a href="projects.html">Projects</a>
+    </nav>
+
+    <div class="matrix">
+        <!-- Matrix Rain Effect (Random Characters) -->
+        <span style="left: 10%; animation-duration: 3s;">P</span>
+        <span style="left: 30%; animation-duration: 4s;">e</span>
+        <span style="left: 50%; animation-duration: 5s;">n</span>
+        <span style="left: 70%; animation-duration: 4s;">a</span>
+        <span style="left: 90%; animation-duration: 3s;">r</span>
+        <span style="left: 20%; animation-duration: 6s;">d</span>
+        <span style="left: 40%; animation-duration: 7s;">i</span>
+        <span style="left: 60%; animation-duration: 3s;">u</span>
+        <span style="left: 80%; animation-duration: 5s;">m</span>
+    </div>
+
+    <div class="content">
+        <h1>Chat with Penardium</h1>
+
+        <div id="chat-box"
+            style="margin: 20px auto; max-height: 300px; overflow-y: auto; border: 1px solid #0f0; padding: 10px; border-radius: 8px; background-color: rgba(0,0,0,0.5); box-shadow: 0 0 10px #0f0;">
+        </div>
+
+        <div style="display: flex; justify-content: center; margin-top: 10px;">
+            <input type="text" id="user-input" placeholder="Type your message..." id="user-input"
+                style="flex: 1; max-width: 400px; padding: 10px; background: black; border: 1px solid #0f0; color: #0f0; font-family: 'Courier New', monospace;">
+            <button onclick="sendMessage()" id="send-button"
+                style="margin-left: 10px; padding: 10px; background-color: black; border: 1px solid #0f0; color: #0f0; cursor: pointer;">Send</button>
+        </div>
+    </div>
+    <script>
+        const chatBox = document.getElementById("chat-box");
+        const userInput = document.getElementById("user-input");
+        const sendButton = document.getElementById("send-button");
+
+        let dialogueIndex = 0;
+        let waitingForUser = false;
+        let completedIntro = false;
+
+        const introMessages = [
+            "greetings black one",
+            "penardium is now running on your browser",
+            "whatever you do from now on is at your own risk",
+            "do you wish to proceed?"
+        ];
+
+        function appendMessage(sender, text) {
+            const message = document.createElement("div");
+            message.style.marginBottom = "8px";
+            message.style.display = "flex";
+            message.style.justifyContent = sender === "You" ? "flex-end" : "flex-start";
+
+            const bubble = document.createElement("div");
+            bubble.innerHTML = `<strong>${sender === "You" ? "You" : "<b>Penardium</b>"}:</strong> ${text}`;
+            bubble.style.background = "rgba(0, 255, 0, 0.1)";
+            bubble.style.border = "1px solid #0f0";
+            bubble.style.borderRadius = "8px";
+            bubble.style.padding = "8px 12px";
+            bubble.style.maxWidth = "60%";
+            bubble.style.color = "#0f0";
+            bubble.style.textAlign = "left";
+
+            message.appendChild(bubble);
+            chatBox.appendChild(message);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function sendMessage() {
+            const msg = userInput.value.trim();
+            if (!msg) return;
+            appendMessage("You", msg);
+            userInput.value = "";
+
+            if (waitingForUser) {
+                const normalized = msg.toLowerCase();
+                if (normalized.includes("yes") || normalized.includes("sure") || normalized.includes("ok")) {
+                    setTimeout(() => {
+                        appendMessage("Penardium", "enjoy the software");
+                    }, 1000)
+                } else {
+                    setTimeout(() => {
+                        appendMessage("Penardium", "...");
+                    }, 1000)
+                }
+                completedIntro = true;
+                waitingForUser = false;
+                return;
+            }
+
+            if (completedIntro) {
+                appendMessage("Penardium", "...");
+            }
+        }
+
+        userInput.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" && !userInput.disabled) sendMessage();
+        });
+
+        function disableChat(disabled) {
+            userInput.disabled = disabled;
+            sendButton.disabled = disabled;
+            userInput.style.opacity = disabled ? "0.5" : "1";
+            sendButton.style.opacity = disabled ? "0.5" : "1";
+            sendButton.style.cursor = disabled ? "not-allowed" : "pointer";
+        }
+
+        function playIntro() {
+            if (dialogueIndex < introMessages.length) {
+                appendMessage("Penardium", introMessages[dialogueIndex]);
+                dialogueIndex++;
+                setTimeout(playIntro, 2000);
+            } else {
+                waitingForUser = true;
+                disableChat(false); // Enable chat after intro
+            }
+        }
+
+        // Start the sequence on load
+        window.onload = () => {
+            disableChat(true); // Disable during intro
+            setTimeout(playIntro, 1000);
+        };
+    </script>
+
+
+</body>
+
+</html>
