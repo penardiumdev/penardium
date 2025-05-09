@@ -127,6 +127,10 @@
         p {
             text-shadow: 0 0 10px #0f0, 0 0 20px #0f0, 0 0 30px #0f0;
         }
+
+        input[disabled] {
+            cursor: not-allowed;
+        }
     </style>
 </head>
 
@@ -157,7 +161,7 @@
         <h1>Chat with Penardium</h1>
 
         <div id="chat-box"
-            style="margin: 20px auto; max-height: 300px; overflow-y: auto; border: 1px solid #0f0; padding: 10px; border-radius: 8px; background-color: rgba(0,0,0,0.5); box-shadow: 0 0 10px #0f0;">
+            style="margin: 20px auto; height: 420px; overflow-y: auto; border: 1px solid #0f0; padding: 10px; border-radius: 8px; background-color: rgba(0,0,0,0.5); box-shadow: 0 0 10px #0f0;">
         </div>
 
         <div style="display: flex; justify-content: center; margin-top: 10px;">
@@ -201,8 +205,21 @@
 
             message.appendChild(bubble);
             chatBox.appendChild(message);
+
+            // Immediate scroll
             chatBox.scrollTop = chatBox.scrollHeight;
+
+            // If there are images, wait for them to load before scrolling again
+            const images = bubble.querySelectorAll("img");
+            if (images.length > 0) {
+                images.forEach(img => {
+                    img.addEventListener("load", () => {
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    });
+                });
+            }
         }
+
 
         function sendMessage() {
             const msg = userInput.value.trim();
@@ -216,6 +233,9 @@
                     setTimeout(() => {
                         appendMessage("Penardium", "enjoy the software");
                     }, 1000)
+                    setTimeout(() => {
+                        appendMessage("Penardium", '<img src="two-black-people.gif" alt="Enjoy" style="max-width: 200px; border: 1px solid #0f0; border-radius: 8px;">');
+                    }, 3000);
                 } else {
                     setTimeout(() => {
                         appendMessage("Penardium", "...");
