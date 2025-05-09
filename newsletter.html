@@ -89,6 +89,7 @@
             text-align: center;
             z-index: 1;
             padding: 20px;
+            min-width: 50%;
             max-width: 80%;
             background: rgba(0, 0, 0, 0.7);
             border-radius: 10px;
@@ -98,12 +99,38 @@
             height: fit-content;
         }
 
+        .video-wrapper {
+            max-width: 420px;
+            margin: 0 auto;
+            padding: 20px 0;
+        }
+
+        .video-container {
+            position: relative;
+            padding-bottom: 56.25%;
+            /* 16:9 aspect ratio */
+            height: 0;
+            overflow: hidden;
+            width: 100%;
+            background: #000;
+        }
+
+        .video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+
         /* Responsive Image */
         .content img {
             max-width: 69%;
             height: auto;
             margin: 32px 0;
         }
+
 
         h1 {
             font-size: 3rem;
@@ -138,8 +165,6 @@
 
 <body>
 
-
-
     <div class="matrix">
         <!-- Matrix Rain Effect (Random Characters) -->
         <span style="left: 10%; animation-duration: 3s;">P</span>
@@ -154,11 +179,14 @@
     </div>
 
     <div class="content">
-        <h1>Projects</h1>
-
-        <p>Soon to be announced to the public (due to various reasons, mostly leagal)</p>
-        <img src="projectsgif.gif" alt="">
-
+        <h1>Newsletter</h1>
+        <p>Please, subscribe to our newsletter</p>
+        <div style="display: flex; justify-content: center; margin-top: 10px;">
+            <input type="text" placeholder="Type in your email..." id="email-input"
+                style="flex: 1; max-width: 400px; padding: 10px; background: black; border: 1px solid #0f0; color: #0f0; font-family: 'Courier New', monospace;">
+            <button onclick="document.getElementById('email-input').value = ''"
+                style="margin-left: 10px; padding: 10px; background-color: black; border: 1px solid #0f0; color: #0f0; cursor: pointer;">Subscribe</button>
+        </div>
     </div>
     <script src="navbar.js"></script>
 </body>
