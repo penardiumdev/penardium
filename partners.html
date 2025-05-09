@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Our Partners - Penardium</title>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <style>
+        /* Basic Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        nav {
+            width: 100%;
+            background: #000;
+            border-bottom: 2px solid #0f0;
+            padding: 16px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+        }
+
+        nav a {
+            color: #0f0;
+            text-decoration: none;
+            margin: 0 20px;
+            font-size: 1.1rem;
+            text-shadow: 0 0 5px #0f0;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: #fff;
+        }
+
+        .matrix {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: -1;
+        }
+
+        .matrix span {
+            position: absolute;
+            top: -100%;
+            font-size: 20px;
+            color: #0f0;
+            white-space: nowrap;
+            animation: drop 4s linear infinite;
+        }
+
+        @keyframes drop {
+            0% {
+                top: -100%;
+            }
+
+            100% {
+                top: 100%;
+            }
+        }
+
+        .content {
+            text-align: center;
+            z-index: 1;
+            padding: 20px;
+            max-width: 80%;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+            margin-top: 128px;
+            margin-bottom: 64px;
+            height: fit-content;
+        }
+
+        .content img {
+            max-width: 69%;
+            height: auto;
+            margin: 32px 0;
+        }
+
+        .partner {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin-top: 40px;
+            gap: 24px;
+        }
+
+        .partner img {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+            border: 1px solid #0f0;
+            border-radius: 10px;
+            background-color: #000;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+
+        .partner-text h2 {
+            font-size: 1.6rem;
+            margin-bottom: 6px;
+        }
+
+        .partner-text p {
+            font-size: 1rem;
+            opacity: 0.8;
+            max-width: 400px;
+        }
+
+
+        h1 {
+            font-size: 3rem;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            margin-top: 24px;
+            font-size: 1.8rem;
+        }
+
+        p {
+            font-size: 1.2rem;
+            line-height: 1.5;
+            max-width: 700px;
+            margin: 0 auto;
+            margin-top: 8px;
+        }
+
+        h1,
+        h2,
+        p {
+            text-shadow: 0 0 10px #0f0, 0 0 20px #0f0, 0 0 30px #0f0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav>
+        <a href="index.html">Home</a>
+        <a href="about.html">About Us</a>
+        <a href="contact.html">Contact</a>
+        <a href="projects.html">Projects</a>
+        <a href="chat.html">Chat</a>
+        <a href="partners.html">Partners</a>
+    </nav>
+
+    <div class="matrix">
+        <span style="left: 10%; animation-duration: 3s;">P</span>
+        <span style="left: 30%; animation-duration: 4s;">e</span>
+        <span style="left: 50%; animation-duration: 5s;">n</span>
+        <span style="left: 70%; animation-duration: 4s;">a</span>
+        <span style="left: 90%; animation-duration: 3s;">r</span>
+        <span style="left: 20%; animation-duration: 6s;">d</span>
+        <span style="left: 40%; animation-duration: 7s;">i</span>
+        <span style="left: 60%; animation-duration: 3s;">u</span>
+        <span style="left: 80%; animation-duration: 5s;">m</span>
+    </div>
+
+    <div class="content">
+        <h1>Our Partners</h1>
+
+        <div class="partner">
+            <img src="gordobobot.jpg" alt="GordoBobo Inc. Logo">
+            <div class="partner-text">
+                <a href="https://gordobobo.com" style="color:#0f0;">
+                    <h2>GordoBobo Inc.</h2>
+                </a>
+                <p>A rogue tech collective known for their absurdly efficient software and unpredictable projects. We
+                    trust them. Mostly.</p>
+            </div>
+        </div>
+
+        <div class="partner">
+            <img src="cenardium.png" alt="Cenardium Logo">
+            <div class="partner-text">
+                <h2>Cenardium</h2>
+                <p>A rival firm operating in the same black-coded shadows. They play dirty, but smart — and that earns
+                    our respect.</p>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+
+</html>
