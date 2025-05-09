@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Penardium</title>
+    <title>Our Partners - Penardium</title>
     <link rel="icon" href="favicon.ico" type="image/x-icon">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <style>
@@ -15,18 +15,15 @@
             box-sizing: border-box;
         }
 
-        /* Background and Full-Page Layout */
         body {
             background-color: #000;
             color: #0f0;
             font-family: 'Courier New', Courier, monospace;
             display: flex;
             justify-content: center;
-            /* align-items: center; */
             height: 100vh;
-            /* overflow: hidden; */
         }
-        
+
         nav {
             width: 100%;
             background: #000;
@@ -53,8 +50,6 @@
             color: #fff;
         }
 
-
-        /* Matrix Effect */
         .matrix {
             position: absolute;
             top: 0;
@@ -84,7 +79,6 @@
             }
         }
 
-        /* Main Content Area */
         .content {
             text-align: center;
             z-index: 1;
@@ -98,12 +92,41 @@
             height: fit-content;
         }
 
-         /* Responsive Image */
-         .content img {
+        .content img {
             max-width: 69%;
             height: auto;
             margin: 32px 0;
         }
+
+        .partner {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin-top: 40px;
+            gap: 24px;
+        }
+
+        .partner img {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+            border: 1px solid #0f0;
+            border-radius: 10px;
+            background-color: #000;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+
+        .partner-text h2 {
+            font-size: 1.6rem;
+            margin-bottom: 6px;
+        }
+
+        .partner-text p {
+            font-size: 1rem;
+            opacity: 0.8;
+            max-width: 400px;
+        }
+
 
         h1 {
             font-size: 3rem;
@@ -111,15 +134,21 @@
             margin-bottom: 20px;
         }
 
+        h2 {
+            margin-top: 24px;
+            font-size: 1.8rem;
+        }
+
         p {
             font-size: 1.2rem;
             line-height: 1.5;
             max-width: 700px;
             margin: 0 auto;
+            margin-top: 8px;
         }
 
-        /* Neon Glowing Text */
         h1,
+        h2,
         p {
             text-shadow: 0 0 10px #0f0, 0 0 20px #0f0, 0 0 30px #0f0;
         }
@@ -138,7 +167,6 @@
     </nav>
 
     <div class="matrix">
-        <!-- Matrix Rain Effect (Random Characters) -->
         <span style="left: 10%; animation-duration: 3s;">P</span>
         <span style="left: 30%; animation-duration: 4s;">e</span>
         <span style="left: 50%; animation-duration: 5s;">n</span>
@@ -151,12 +179,30 @@
     </div>
 
     <div class="content">
-        <h1>Projects</h1>
+        <h1>Our Partners</h1>
 
-        <p>Soon to be announced to the public (due to various reasons, mostly leagal)</p>
-        <img src="projectsgif.gif" alt="">
+        <div class="partner">
+            <img src="gordobobot.jpg" alt="GordoBobo Inc. Logo">
+            <div class="partner-text">
+                <a href="https://gordobobo.com" style="color:#0f0;">
+                    <h2>GordoBobo Inc.</h2>
+                </a>
+                <p>A rogue tech collective known for their absurdly efficient software and unpredictable projects. We
+                    trust them. Mostly.</p>
+            </div>
+        </div>
+
+        <div class="partner">
+            <img src="cenardium.png" alt="Cenardium Logo">
+            <div class="partner-text">
+                <h2>Cenardium</h2>
+                <p>A rival firm operating in the same black-coded shadows. They play dirty, but smart — and that earns
+                    our respect.</p>
+            </div>
+        </div>
 
     </div>
+
 </body>
 
 </html>
