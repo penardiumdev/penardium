@@ -7,6 +7,7 @@ const navLinks = [
     { text: "Partners", href: "partners.html" },
     { text: "Newsletter", href: "newsletter.html" },
     { text: "Important Links", href: "importantlinks.html" },
+    { text: "Store", href: "store.html"}
 ];
 
 const nav = document.createElement('nav');
@@ -19,3 +20,4 @@ navLinks.forEach(link => {
 });
 
 document.body.insertBefore(nav, document.body.firstChild);
+
