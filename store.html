@@ -181,6 +181,14 @@
             margin-bottom: 12px;
         }
 
+        .item_price {
+            margin-bottom: 12px;
+            font-weight: 800;
+            color: rgb(164, 255, 164);
+            text-shadow: 0 0 10px rgb(164, 255, 164), 0 0 20px rgb(164, 255, 164), 0 0 30px rgb(164, 255, 164);
+
+        }
+
         .item button {
             margin-left: 10px;
             padding: 10px;
@@ -295,7 +303,7 @@
             imageViewer.style = "display: none"
         }
 
-        const renderItems = ({ title, src }) => {
+        const renderItems = ({ title, src, price }) => {
             const items = document.querySelector('.items');
 
             // Create container
@@ -316,6 +324,11 @@
             desc.classList.add('item_desc');
             desc.textContent = title;
 
+            // Price
+            const priceEl = document.createElement('p');
+            priceEl.classList.add('item_price');
+            priceEl.textContent = `${price} US$`;
+
             // Button
             const button = document.createElement('button');
             button.textContent = "Add to cart";
@@ -325,6 +338,7 @@
             // Build the structure
             item.appendChild(imgContainer);
             item.appendChild(desc);
+            item.appendChild(priceEl);
             item.appendChild(button);
 
             // Append to items container
@@ -333,15 +347,15 @@
 
 
         const shopItems = [
-            { title: 'Penardium figure', src: 'figure-penardium.png' },
-            { title: 'Gordobobot figure', src: 'figure-gordobobot.png' },
-            { title: 'Fentardium figure', src: 'figure-fentardium.png' },
-            { title: 'Cenardium figure', src: 'figure-cenardium.png' },
-            { title: 'Penardium black t-shirt', src: 'black-tshirt-penardium.png' },
-            { title: 'Penardium white t-shirt', src: 'white-tshirt-penardium.png' },
-            { title: 'Penardium hat', src: 'black-hat-penardium.png' },
-            { title: 'Penardium mousepad', src: 'mousepad-penardium.png' },
-            { title: 'Penardium phone holder', src: 'popsocket-penardium.png' }
+            { title: 'Penardium figure', src: 'figure-penardium.png', price: '199' },
+            { title: 'Gordobobot figure', src: 'figure-gordobobot.png', price: '199' },
+            { title: 'Fentardium figure', src: 'figure-fentardium.png', price: '199' },
+            { title: 'Cenardium figure', src: 'figure-cenardium.png', price: '199' },
+            { title: 'Penardium black t-shirt', src: 'black-tshirt-penardium.png', price: '199' },
+            { title: 'Penardium white t-shirt', src: 'white-tshirt-penardium.png', price: '199' },
+            { title: 'Penardium hat', src: 'black-hat-penardium.png', price: '199' },
+            { title: 'Penardium mousepad', src: 'mousepad-penardium.png', price: '199' },
+            { title: 'Penardium phone holder', src: 'popsocket-penardium.png', price: '199' }
         ]
 
         shopItems.forEach((shopItem) => {
