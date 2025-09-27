@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penardium</title>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <style>
+        /* Basic Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Background and Full-Page Layout */
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            /* align-items: center; */
+            height: 100vh;
+            /* overflow: hidden; */
+        }
+
+        nav {
+            width: 100%;
+            background: #000;
+            border-bottom: 2px solid #0f0;
+            padding: 16px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+        }
+
+        nav a {
+            color: #0f0;
+            text-decoration: none;
+            margin: 0 20px;
+            font-size: 1.1rem;
+            text-shadow: 0 0 5px #0f0;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: #fff;
+        }
+
+
+        /* Matrix Effect */
+        .matrix {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: -1;
+        }
+
+        .matrix span {
+            position: absolute;
+            top: -100%;
+            font-size: 20px;
+            color: #0f0;
+            white-space: nowrap;
+            animation: drop 4s linear infinite;
+        }
+
+        @keyframes drop {
+            0% {
+                top: -100%;
+            }
+
+            100% {
+                top: 100%;
+            }
+        }
+
+        /* Main Content Area */
+        .content {
+            text-align: center;
+            z-index: 1;
+            padding: 20px;
+            max-width: 80%;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+            margin-top: 128px;
+            margin-bottom: 64px;
+            height: fit-content;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Responsive Image */
+        /* .content img {
+            max-width: 69%;
+            height: auto;
+            margin: 32px 0;
+        } */
+
+        h1 {
+            font-size: 3rem;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        p {
+            font-size: 1.2rem;
+            line-height: 1.5;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        /* Neon Glowing Text */
+        h1,
+        p {
+            text-shadow: 0 0 10px #0f0, 0 0 20px #0f0, 0 0 30px #0f0;
+        }
+
+        @media (max-width: 920px) {
+            nav {
+                flex-direction: column;
+                position: absolute;
+            }
+
+            .content {
+                margin-top: 228px;
+            }
+        }
+
+        .items {
+            display: flex;
+            flex-direction: row;
+            width: 80%;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 32px 16px;
+            padding-top: 16px;
+            max-width: 800px;
+        }
+
+        .item {
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+            width: 200px;
+            min-width: 160px;
+            padding-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        @media screen and (max-width: 768px) {
+            .item {
+                width: 100%;
+            }
+        }
+
+        .item img {
+            width: 98%;
+            cursor: pointer;
+            transform: scale(1.2)
+        }
+
+        .item .image-container {
+            overflow: hidden;
+        }
+
+        .item_desc {
+            margin-bottom: 12px;
+        }
+
+        .item button {
+            margin-left: 10px;
+            padding: 10px;
+            background-color: black;
+            border: 1px solid #0f0;
+            color: #0f0;
+            cursor: pointer;
+            width: 80%;
+        }
+
+        .image-display {
+            position: fixed;
+            top: 0;
+            width: 0;
+            width: 100%;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.77);
+            z-index: 5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 64px;
+            flex-direction: column;
+        }
+
+        .image-display img {
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+            width: 90%;
+            max-width: 800px;
+        }
+
+        .image-display button {
+            position: fixed;
+            top: 32px;
+            right: 32px;
+            padding: 10px;
+            background-color: black;
+            border: 1px solid #0f0;
+            color: #0f0;
+            cursor: pointer;
+        }
+
+        .image-display .backdrop {
+            position: fixed;
+            z-index: -1;
+            top: 0;
+            width: 0;
+            width: 100%;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.77);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="image-display" style="display: none;">
+        <img src="figure-penardium.png" alt="">
+        <button onclick="closeImageViewer()">Close</button>
+        <div class="backdrop" onclick="closeImageViewer()"></div>
+    </div>
+
+
+    <div class="matrix">
+        <!-- Matrix Rain Effect (Random Characters) -->
+        <span style="left: 10%; animation-duration: 3s;">P</span>
+        <span style="left: 30%; animation-duration: 4s;">e</span>
+        <span style="left: 50%; animation-duration: 5s;">n</span>
+        <span style="left: 70%; animation-duration: 4s;">a</span>
+        <span style="left: 90%; animation-duration: 3s;">r</span>
+        <span style="left: 20%; animation-duration: 6s;">d</span>
+        <span style="left: 40%; animation-duration: 7s;">i</span>
+        <span style="left: 60%; animation-duration: 3s;">u</span>
+        <span style="left: 80%; animation-duration: 5s;">m</span>
+    </div>
+
+    <div class="content">
+        <h1>Penardium store</h1>
+
+        <p>Here you’ll find original merch built with style, detail, and a touch of the unexpected. From everyday pieces
+            to standout collectibles, everything we make is designed to carry the identity of Penardium into your space.
+
+            This isn’t just stuff you buy. It’s a way to wear, display, and live the world of Penardium.</p>
+
+        <div class="items">
+        </div>
+    </div>
+
+
+    <script src="navbar.js"></script>
+
+    <script>
+
+        const openImageViewer = ({ target }) => {
+            const imageViewer = document.querySelector('.image-display')
+            const imageViewerImg = document.querySelector('.image-display img')
+            const src = target.src;
+
+            imageViewerImg.src = src;
+
+            imageViewer.style = "display: flex"
+
+            console.log(target)
+
+        }
+
+        const closeImageViewer = (ev) => {
+            const imageViewer = document.querySelector('.image-display')
+            imageViewer.style = "display: none"
+        }
+
+        const renderItems = ({ title, src }) => {
+            const items = document.querySelector('.items');
+
+            // Create container
+            const item = document.createElement('div');
+            item.classList.add('item');
+
+            const imgContainer = document.createElement('div')
+            imgContainer.classList.add('image-container')
+
+            // Image
+            const img = document.createElement('img');
+            img.src = src;
+            img.alt = title;
+            img.onclick = openImageViewer
+
+            // Title/description
+            const desc = document.createElement('p');
+            desc.classList.add('item_desc');
+            desc.textContent = title;
+
+            // Button
+            const button = document.createElement('button');
+            button.textContent = "Add to cart";
+
+            imgContainer.appendChild(img)
+
+            // Build the structure
+            item.appendChild(imgContainer);
+            item.appendChild(desc);
+            item.appendChild(button);
+
+            // Append to items container
+            items.appendChild(item);
+        };
+
+
+        const shopItems = [
+            { title: 'Penardium figure', src: 'figure-penardium.png' },
+            { title: 'Gordobobot figure', src: 'figure-gordobobot.png' },
+            { title: 'Fentardium figure', src: 'figure-fentardium.png' },
+            { title: 'Cenardium figure', src: 'figure-cenardium.png' },
+            { title: 'Penardium black t-shirt', src: 'black-tshirt-penardium.png' },
+            { title: 'Penardium white t-shirt', src: 'white-tshirt-penardium.png' },
+            { title: 'Penardium hat', src: 'black-hat-penardium.png' },
+            { title: 'Penardium mousepad', src: 'mousepad-penardium.png' },
+            { title: 'Penardium phone holder', src: 'popsocket-penardium.png' }
+        ]
+
+        shopItems.forEach((shopItem) => {
+            renderItems(shopItem)
+        })
+        // renderItems({ title: 'Penardium figure', src: 'figure-penardium.png' });
+    </script>
+
+</body>
+
+</html>
