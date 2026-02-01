@@ -492,7 +492,5 @@ loadFileBtn.addEventListener('click', () => {
 	});
 });
 
-if (localStorage.getItem(STORAGE_TEXT) === null) {
-	loadPreset(0);
-}
 renderAsciiButtons();
+
