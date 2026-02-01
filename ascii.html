@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>&lt; Penasciium &#47&gt;</title>
+    <link rel="stylesheet" href="ascii.css">
+</head>
+
+<body>
+    <div class="header">
+        <pre class="title-pre">   __ ______                         _ _                       ____   
+  / / | ___ \                       (_|_)                     / /\ \  
+ / /  | |_/ /__ _ __   __ _ ___  ___ _ _ _   _ _ __ ___      / /  \ \ 
+< <   |  __/ _ \ '_ \ / _` / __|/ __| | | | | | '_ ` _ \    / /    > >
+ \ \  | | |  __/ | | | (_| \__ \ (__| | | |_| | | | | | |  / /    / / 
+  \_\ \_|  \___|_| |_|\__,_|___/\___|_|_|\__,_|_| |_| |_| /_/    /_/  
+                                                                      
+                                                                      </pre>
+    </div>
+    <div class="content">
+        <div>
+            <div style="width: 100%;display: flex;justify-content: space-between;gap: 16px;">
+                <div class="file-options">
+                    <button id="new-file-btn">New File</button>
+                    <button id="load-file-btn">Load Save</button>
+                </div>
+                <button id="toggle-settings">Show Options</button>
+            </div>
+            <div id="load-file-list" style="width: fit-content; display: none;">
+                <pre id="load-file-list-pre"></pre>
+            </div>
+            <br>
+            <div class="image-container">
+                <div id="ascii-highlight" class="ascii-text"></div>
+                <textarea class="ascii-text" name="" id="asci-textarea"></textarea>
+            </div>
+            <br>
+            <div class="main-buttons" style="display: flex;justify-content: flex-end;width: 100%;gap: 16px">
+                <div>
+                    <button id="copy-clipboard">Copy to Clipboard</button>
+                    <button id="save-preset">Save</button>
+                </div>
+            </div>
+        </div>
+        <div id="settings" style="display: none;margin: 32px;">
+            <h2 style="text-decoration: underline;text-underline-offset: 4px;">Colors</h2>
+            <label for="bg-color-picker">Background Color:</label>
+            <input type="color" id="bg-color-picker" value="#ffffff">
+            <br>
+            <label for="text-color-picker">Text Color:</label>
+            <input type="color" id="text-color-picker" value="#000000">
+            <br>
+            <br>
+            <button id="invert-colors">Invert Colors</button>
+            <br>
+            <h2 style="text-decoration: underline;text-underline-offset: 4px;">Stencil</h2>
+            <label for="image-input" style="display: block;width: fit-content;">
+                <pre style="margin: 0;cursor: pointer;width: fit-content;">+--------------+
+| Change Image |
++--------------+</pre>
+            </label>
+            <input id="image-input" type="file" name="" id="" accept=".jpeg,.jpg,.png,.webp,.gif"
+                style="display: none;">
+            <br>
+            <label for="background-pos">Background Position:</label>
+            <select name="" id="background-pos">
+                <option value="center">Center</option>
+                <option value="top">Top</option>
+                <option value="bottom">Bottom</option>
+                <option value="left">Left</option>
+                <option value="right">Right</option>
+            </select>
+            <br>
+            <br>
+            <label for="alpha-slider">Background Opacity:</label>
+            <input type="range" min="0" max="1" step="0.01" id="alpha-slider" value="50">
+            <br>
+            <br>
+            <label for="char-alpha-slider">Text Background Color Opacity:</label>
+            <input type="range" min="0" max="1" step="0.01" id="char-alpha-slider" value="50">
+            <br>
+            <br>
+            <label for="char-bg-color-picker">Text Background Color:</label>
+            <input type="color" id="char-bg-color-picker" value="#ffffff">
+            <br>
+            <br>
+            <h2 style="text-decoration: underline;text-underline-offset: 4px;">Saves</h2>
+            <input type="file" id="import-presets" accept=".json" style="display: none;">
+            <button id="import-presets-btn">Import</button>
+            <button id="export-presets">Export All</button>
+            <br>
+            <br>
+            <div id="presets-list"></div>
+        </div>
+    </div>
+
+    <script src="ascii.js"></script>
+</body>
+
+</html>
+
+<!-- <div id="replace-tooltip" style="display: block; margin-bottom: 10px;">
+            <input type="text" id="replace-char" maxlength="1" style="width: 20px;">
+            <button id="replace-btn">Replace</button>
+            <button id="undo-replace-btn">Undo</button>
+        </div> -->
