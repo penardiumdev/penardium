@@ -476,7 +476,7 @@ newFileBtn.addEventListener('click', () => {
 		asciiTextarea.value = '';
 		asciiHighlight.innerHTML = '';
 		// imageContainer.style.backgroundImage = 'none';
-		localStorage.removeItem(STORAGE_IMAGE);
+		// localStorage.removeItem(STORAGE_IMAGE);
 		localStorage.removeItem(STORAGE_TEXT);
 	}
 });
@@ -501,3 +501,4 @@ if (localStorage.getItem(STORAGE_TEXT) === null) {
 	loadPreset(0);
 }
 renderAsciiButtons();
+
