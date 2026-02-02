@@ -208,6 +208,11 @@ function loadPreset(index) {
 		localStorage.setItem(STORAGE_TEXT, preset.text);
 		localStorage.setItem(STORAGE_BG_COLOR, preset.bgColor);
 		localStorage.setItem(STORAGE_TEXT_COLOR, preset.textColor);
+		localStorage.setItem(STORAGE_WIDTH, preset.width);
+		localStorage.setItem(STORAGE_HEIGHT, preset.height);
+		localStorage.setItem(STORAGE_ALPHA, preset.backgroundOpacity || 0.5);
+		localStorage.setItem(STORAGE_CHAR_ALPHA, preset.charBgOpacity || 0.5);
+		localStorage.setItem(STORAGE_CHAR_BG_COLOR, preset.charBgColor || '#ffffff');
 	}
 }
 
@@ -483,7 +488,7 @@ loadFileBtn.addEventListener('click', () => {
 	presets.forEach((preset, index) => {
 		const a = document.createElement('a');
 		a.href = '#';
-		a.textContent = `${preset.name} \n`;
+		a.textContent = `${index + 1}. ${preset.name} \n`;
 		loadFileListPre.appendChild(a);
 		a.addEventListener('click', () => {
 			loadPreset(index);
@@ -492,5 +497,7 @@ loadFileBtn.addEventListener('click', () => {
 	});
 });
 
+if (localStorage.getItem(STORAGE_TEXT) === null) {
+	loadPreset(0);
+}
 renderAsciiButtons();
-
