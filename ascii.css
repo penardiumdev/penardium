@@ -166,15 +166,37 @@ textarea.ascii-text {
 }
 
 .file-options {
-    width: fit-content  ;
+    width: fit-content;
 }
 
-a, a:visited {
+a,
+a:visited {
     color: white;
     text-decoration: none;
     cursor: pointer;
 }
 
 a:hover {
+    text-decoration: underline;
+}
+
+
+body {
+    transform-origin: top center;
+}
+
+@media (max-width: 500px) {
+    body {
+        transform: scale(0.7);
+    }
+}
+
+.navbar>a {
+    color: #7a7a7a;
+    text-decoration-color: white;
+}
+
+.navbar>a.selected {
+    color: white;
     text-decoration: underline;
 }

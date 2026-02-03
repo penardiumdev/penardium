@@ -25,6 +25,7 @@ const loadFileBtn = document.getElementById('load-file-btn');
 const newFileBtn = document.getElementById('new-file-btn');
 const loadFileList = document.getElementById('load-file-list');
 const loadFileListPre = document.getElementById('load-file-list-pre');
+const presetsPreviewDiv = document.getElementById('presets-preview');
 
 const asciiPresets = JSON.parse(localStorage.getItem('ascii-tool-presets') || ['[]']);
 
@@ -374,14 +375,22 @@ toggleSettingsBtn.addEventListener('click', () => {
 	renderAsciiButtons()
 
 });
+
 const resizeObserver = new ResizeObserver(entries => {
-	for (let entry of entries) {
-		const { width, height } = entry.contentRect;
+	for (const entry of entries) {
+		const box = entry.borderBoxSize?.[0];
+
+		if (!box) return;
+
+		const width = Math.round(box.inlineSize);
+		const height = Math.round(box.blockSize);
+
 		localStorage.setItem(STORAGE_WIDTH, width + 'px');
 		localStorage.setItem(STORAGE_HEIGHT, height + 'px');
 	}
 });
-resizeObserver.observe(imageContainer);
+
+resizeObserver.observe(imageContainer, { box: 'border-box' });
 
 alphaSlider.addEventListener('input', () => {
 	document.documentElement.style.setProperty('--alpha', alphaSlider.value);
@@ -476,7 +485,7 @@ newFileBtn.addEventListener('click', () => {
 		asciiTextarea.value = '';
 		asciiHighlight.innerHTML = '';
 		// imageContainer.style.backgroundImage = 'none';
-		// localStorage.removeItem(STORAGE_IMAGE);
+		localStorage.removeItem(STORAGE_IMAGE);
 		localStorage.removeItem(STORAGE_TEXT);
 	}
 });
@@ -497,8 +506,8 @@ loadFileBtn.addEventListener('click', () => {
 	});
 });
 
+
 if (localStorage.getItem(STORAGE_TEXT) === null) {
 	loadPreset(0);
 }
 renderAsciiButtons();
-
