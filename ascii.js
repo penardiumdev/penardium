@@ -33,39 +33,39 @@ if (asciiPresets.length === 0) {
 	const presets = JSON.parse(localStorage.getItem("ascii-tool-presets") || '[]');
 	presets.push({
 		"name": "white rabbit",
-		"text": " \n          ^_\n         //\\\\    _^_\n         ||.\\\\  //.\\\\\n          \\\\.\\\\//..//\n          /*\\// \\..//\n        .* --/\\  \\//\n      .*      \\ . /\n    .*         \\)\n   /.   ._.     \\**_.*-----.__\n  (9)  (99)      )            *--\n  /\"     \"       )               *--\n  \\**        .__.                   *--\n   \\wWw   __/                          *-\n    *----*                                *_\n     \\                                      *\n      \\                        .---.         |\n      (  (     .      .       *     *        |                                                                                                                                                                                                                \n       \\  \\    \\     (      .*               |\n        7  7    7     \\    /                .*\n       /  //  /*-__.___\\(    ..            / /\n       wWW wWW          \\ /\\            /   /\n                         WWw\\   /     /    /\n                             WWW *_______/==\n ",
-		"width": "403px",
-		"height": "456px",
+		"text": " \n            ^_\n           //\\\\    _^_\n           ||.\\\\  //.\\\\\n            \\\\.\\\\//..//z\n            /*\\// \\..//\n          .* --/\\  \\//\n        .*      \\ . /\n      .*         \\)\n     /.   ._.     \\**_.*-----.__\n    (9)  (99)      )            *--\n    /\"     \"       )               *--\n    \\**          _.                   *--\n     \\wWw   __ .'                        *-\n      *----*                                *_\n       \\                                      *\n        \\                        .---.         |\n        (  (     .      .       *     *        |\n         \\  \\    \\     (      .*               |\n          7  7    7     \\    /                .*\n         /  //  /*-__.___\\(    ..            / /\n         wWW wWW          \\ /\\            /   /\n                           WWw\\   /     /    /\n                               WWW *_______/==\n ",
+		"width": "492px",
+		"height": "457px",
 		"bgColor": "#ffffff",
 		"textColor": "#000000",
-		"backgroundPos": "",
+		"backgroundPos": "left",
 		"backgroundOpacity": "0.5",
-		"charBgOpacity": "0.5",
+		"charBgOpacity": "0.51",
 		"charBgColor": "#ffffff"
 	});
 	presets.push({
 		"name": "is fast",
-		"text": " \n          ^_\n         //\\\\    _^_\n         ||.\\\\  //.\\\\\n          \\\\.\\\\//..//\n          /*\\// \\..//\n        .* --/\\  \\//\n      .*      \\ . /\n    .*         \\)\n   /.   ._.     \\**_.*-----.__\n  (9)  (99)      )            *--\n  /\"     \"       )               *--\n  \\**        .__.                   *--\n   \\wWw   __/                          *-\n    *----*                                *_\n     \\                                      *\n      \\                        .---.         |\n      (  (     .      .       *     *        |                                                                                                                                                                                                                \n       \\  \\    \\     (      .*               |\n        7  7    7     \\    /                .*\n       /  //  /*-__.___\\(    ..            / /\n       wWW wWW          \\ /\\            /   /\n                         WWw\\   /     /    /\n                             WWW *_______/==\n ",
-		"width": "403px",
-		"height": "456px",
+		"text": " \n            ^_\n           //\\\\    _^_\n           ||.\\\\  //.\\\\\n            \\\\.\\\\//..//z\n            /*\\// \\..//\n          .* --/\\  \\//\n        .*      \\ . /\n      .*         \\)\n     /.   ._.     \\**_.*-----.__\n    (9)  (99)      )            *--\n    /\"     \"       )               *--\n    \\**          _.                   *--\n     \\wWw   __ .'                        *-\n      *----*                                *_\n       \\                                      *\n        \\                        .---.         |\n        (  (     .      .       *     *        |\n         \\  \\    \\     (      .*               |\n          7  7    7     \\    /                .*\n         /  //  /*-__.___\\(    ..            / /\n         wWW wWW          \\ /\\            /   /\n                           WWw\\   /     /    /\n                               WWW *_______/==\n ",
+		"width": "492px",
+		"height": "457px",
 		"bgColor": "#000000",
-		"textColor": "#04ff00",
-		"backgroundPos": "",
+		"textColor": "#00ff33",
+		"backgroundPos": "left",
 		"backgroundOpacity": "1",
 		"charBgOpacity": "0",
 		"charBgColor": "#ffffff"
 	});
 	presets.push({
 		"name": "and cute",
-		"text": " \n          ^_\n         //\\\\    _^_\n         ||.\\\\  //.\\\\            <3\n          \\\\.\\\\//..//\n          /*\\// \\..//                  <3\n        .* --/\\  \\//\n      .*      \\ . /        <3\n    .*         \\)\n   /.   ._.     \\**_.*-----.__\n  (9)  (99)      )            *--\n  /\"     \"       )               *--\n  \\**        .__.                   *--\n   \\wWw   __/                          *-\n    *----*                                *_\n     \\                                      *\n      \\                        .---.         |\n      (  (     .      .       *     *        |                                                                                                                                                                                                                \n       \\  \\    \\     (      .*               |\n        7  7    7     \\    /                .*\n       /  //  /*-__.___\\(    ..            / /\n       wWW wWW          \\ /\\            /   /\n                         WWw\\   /     /    /\n                             WWW *_______/==\n ",
-		"width": "403px",
-		"height": "456px",
+		"text": " \n            ^_\n           //\\\\    _^_                <3\n           ||.\\\\  //.\\\\\n            \\\\.\\\\//..//                     <3\n            /*\\// \\..//         <3\n          .* --/\\  \\//\n        .*      \\ . /\n      .*         \\)\n     /.   ._.     \\**_.*-----.__\n    (9)  (99)      )            *--\n    /\"     \"       )               *--\n    \\**          _.                   *--\n     \\wWw   __ .'                        *-\n      *----*                                *_\n       \\                                      *\n        \\                        .---.         |\n        (  (     .      .       *     *        |\n         \\  \\    \\     (      .*               |\n          7  7    7     \\    /                .*\n         /  //  /*-__.___\\(    ..            / /\n         wWW wWW          \\ /\\            /   /\n                           WWw\\   /     /    /\n                               WWW *_______/==\n ",
+		"width": "492px",
+		"height": "457px",
 		"bgColor": "#ffffff",
-		"textColor": "#e60ac9",
-		"backgroundPos": "",
+		"textColor": "#fb00ff",
+		"backgroundPos": "left",
 		"backgroundOpacity": "1",
-		"charBgOpacity": "1",
-		"charBgColor": "#ffffff"
+		"charBgOpacity": "0",
+		"charBgColor": "#ff0000"
 	});
 	localStorage.setItem("ascii-tool-presets", JSON.stringify(presets));
 }
@@ -448,7 +448,7 @@ if (imageInput && imageContainer) {
 
 if (asciiTextarea) {
 	asciiTextarea.addEventListener('input', function () {
-		asciiHighlight.innerHTML = asciiTextarea.value.replace(/./g, '<span class="char-bg">$&</span>');
+		asciiHighlight.innerHTML = asciiTextarea.value.replace(/./g, '<span class="char-bg"> </span>');
 		localStorage.setItem(STORAGE_TEXT, asciiTextarea.value);
 	});
 
