@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Arena Dodger</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; overflow: hidden; background: #1a1a1d; font-family: 'JetBrains Mono', monospace; }
+  canvas { display: block; cursor: none; position: fixed; inset: 0; }
+</style>
+</head>
+<body>
+<canvas id="arena"></canvas>
+<script>
+const canvas = document.getElementById('arena');
+const ctx = canvas.getContext('2d');
+
+// --- config ---
+const ARENA_SIZE = 300;
+const DOT_R = 4;
+const RING_R = 18;            // ring IS the hitbox
+const SPAWN_MARGIN = 420;
+const DOT_EASE = 0.22;
+const RING_EASE = 0.16;
+const BG = '#1a1a1d', FG = '#e8e8e6', DIM = '#6b6b68';
+
+const START_INTERVAL = 900;
+const MIN_INTERVAL = 220;
+const DENSITY_RAMP_MS = 30000;
+const SPEED_RAMP_START_MS = DENSITY_RAMP_MS;
+const BASE_SPEED = 1.4;
+const SPEED_PER_SEC = 0.12;
+
+// --- state ---
+let W, H, ax, ay, DPR = 1;
+let rawX = -1, rawY = -1;
+let dx_ = -1, dy_ = -1;        // inner dot
+let rx = -1, ry = -1;          // outer ring (hitbox)
+let mode = 'idle';
+let tCountdown = 0, tStart = 0, tLastSpawn = 0;
+let projectiles = [];
+let score = 0;
+let best = parseInt(localStorage.getItem('arenaDodgerBest')) || 0;
+let mouseDown = false;
+
+function resize() {
+  DPR = devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ax = (W - ARENA_SIZE) / 2;
+  ay = (H - ARENA_SIZE) / 2;
+}
+addEventListener('resize', resize);
+resize();
+
+canvas.addEventListener('mousemove', e => {
+  rawX = e.clientX; rawY = e.clientY;
+  if (dx_ < 0) { dx_ = rawX; dy_ = rawY; rx = rawX; ry = rawY; }
+});
+canvas.addEventListener('mousedown', () => { mouseDown = true; });
+addEventListener('mouseup', () => { mouseDown = false; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('click', () => {
+  if (mode === 'countdown' && inArena()) {
+    mode = 'playing';
+    tStart = performance.now();
+    tLastSpawn = tStart;
+  } else if (mode === 'dead') {
+    projectiles = []; score = 0; mode = 'idle';
+  }
+});
+
+const inArena = () => rx >= ax && rx <= ax + ARENA_SIZE && ry >= ay && ry <= ay + ARENA_SIZE;
+
+function gameOver() {
+  mode = 'dead';
+  if (score > best) {
+    best = score;
+    localStorage.setItem('arenaDodgerBest', best);
+  }
+}
+
+function spawnInterval(elapsed) {
+  const t = Math.min(1, elapsed / DENSITY_RAMP_MS);
+  return START_INTERVAL + (MIN_INTERVAL - START_INTERVAL) * t;
+}
+
+function projectileSpeed(elapsed) {
+  const rampSeconds = Math.max(0, (elapsed - SPEED_RAMP_START_MS) / 1000);
+  return BASE_SPEED + rampSeconds * SPEED_PER_SEC + Math.random() * 0.5;
+}
+
+function spawn(elapsed) {
+  const side = Math.floor(Math.random() * 4);
+  const along = Math.random() * ARENA_SIZE;
+  const positions = [
+    [ax + along, ay - SPAWN_MARGIN],
+    [ax + ARENA_SIZE + SPAWN_MARGIN, ay + along],
+    [ax + along, ay + ARENA_SIZE + SPAWN_MARGIN],
+    [ax - SPAWN_MARGIN, ay + along],
+  ];
+  const [x, y] = positions[side];
+
+  const tx = rx + (Math.random() - 0.5) * 120;
+  const ty = ry + (Math.random() - 0.5) * 120;
+  const vx0 = tx - x, vy0 = ty - y;
+  const len = Math.hypot(vx0, vy0) || 1;
+  const speed = projectileSpeed(elapsed);
+
+  projectiles.push({ x, y, vx: vx0 / len * speed, vy: vy0 / len * speed, r: 5, trail: [] });
+}
+
+function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px "JetBrains Mono", monospace`;
+  ctx.textAlign = align;
+  ctx.fillText(str, x, y);
+}
+
+function frame(now) {
+  if (rawX >= 0 && dx_ >= 0) {
+    dx_ += (rawX - dx_) * DOT_EASE;
+    dy_ += (rawY - dy_) * DOT_EASE;
+    rx += (rawX - rx) * RING_EASE;
+    ry += (rawY - ry) * RING_EASE;
+  }
+
+  if (mode === 'idle' && inArena()) { mode = 'countdown'; tCountdown = now; }
+  if (mode === 'countdown' && !inArena()) mode = 'idle';
+  if (mode === 'playing' && !inArena()) gameOver();
+
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    if (mode === 'playing') {
+      p.trail.push({ x: p.x, y: p.y });
+      if (p.trail.length > 10) p.trail.shift();
+      p.x += p.vx;
+      p.y += p.vy;
+      if (Math.hypot(p.x - rx, p.y - ry) < RING_R + p.r) gameOver();
+    }
+    const cull = SPAWN_MARGIN + 100;
+    if (p.x < ax - cull || p.x > ax + ARENA_SIZE + cull ||
+        p.y < ay - cull || p.y > ay + ARENA_SIZE + cull) {
+      projectiles.splice(i, 1);
+    }
+  }
+
+  if (mode === 'playing') {
+    const elapsed = now - tStart;
+    score = Math.floor(elapsed / 100);
+    if (now - tLastSpawn > spawnInterval(elapsed)) {
+      spawn(elapsed);
+      tLastSpawn = now;
+    }
+  }
+
+  if (mode === 'countdown' && now - tCountdown >= 3000) {
+    mode = 'playing';
+    tStart = now;
+    tLastSpawn = now;
+  }
+
+  // --- render ---
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  text('BEST', ax + ARENA_SIZE / 2, ay - 44, 11, DIM, 400);
+  text(String(best).padStart(4, '0'), ax + ARENA_SIZE / 2, ay - 16, 28, FG, 800);
+
+  ctx.strokeStyle = FG;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+
+  const mx = ax + ARENA_SIZE / 2, my = ay + ARENA_SIZE / 2;
+
+  if (mode === 'idle') {
+    text('ENTER THE SQUARE', mx, my + 4, 13, DIM, 600);
+  }
+
+  if (mode === 'countdown') {
+    const elapsed = now - tCountdown;
+    if (elapsed < 3000) {
+      text(Math.ceil((3000 - elapsed) / 1000), mx, my + 14, 80);
+      text('CLICK TO SKIP', mx, my + 56, 11, DIM, 400);
+    }
+  }
+
+  if (mode === 'playing') {
+    text(score, mx, my + 40, 120, 'rgba(232,232,230,0.06)');
+  }
+
+  // trajectory preview while mouse held
+  if (mode === 'playing' && mouseDown) {
+    const cull = SPAWN_MARGIN + 100;
+    const bounds = {
+      minX: ax - cull, maxX: ax + ARENA_SIZE + cull,
+      minY: ay - cull, maxY: ay + ARENA_SIZE + cull,
+    };
+    for (const p of projectiles) {
+      const tX = p.vx > 0 ? (bounds.maxX - p.x) / p.vx : p.vx < 0 ? (bounds.minX - p.x) / p.vx : Infinity;
+      const tY = p.vy > 0 ? (bounds.maxY - p.y) / p.vy : p.vy < 0 ? (bounds.minY - p.y) / p.vy : Infinity;
+      const t = Math.max(0, Math.min(tX, tY));
+      const endX = p.x + p.vx * t;
+      const endY = p.y + p.vy * t;
+
+      const grad = ctx.createLinearGradient(p.x, p.y, endX, endY);
+      grad.addColorStop(0, 'rgba(232,232,230,0.55)');
+      grad.addColorStop(1, 'rgba(232,232,230,0)');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // projectiles
+  for (const p of projectiles) {
+    const pdx = Math.max(0, ax - p.x, p.x - (ax + ARENA_SIZE));
+    const pdy = Math.max(0, ay - p.y, p.y - (ay + ARENA_SIZE));
+    const dist = Math.max(pdx, pdy);
+    const alpha = dist === 0 ? 1 : Math.max(0.18, 1 - dist / SPAWN_MARGIN * 0.82);
+
+    if (p.trail.length >= 2) {
+      for (let i = 1; i < p.trail.length; i++) {
+        const a = (i / p.trail.length) * 0.4 * alpha;
+        ctx.strokeStyle = `rgba(232,232,230,${a})`;
+        ctx.lineWidth = p.r * (i / p.trail.length) * 1.1;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(p.trail[i-1].x, p.trail[i-1].y);
+        ctx.lineTo(p.trail[i].x, p.trail[i].y);
+        ctx.stroke();
+      }
+    }
+
+    const grad = ctx.createRadialGradient(p.x - p.r * 0.4, p.y - p.r * 0.4, 0, p.x, p.y, p.r);
+    grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+    grad.addColorStop(0.7, `rgba(232,232,230,${alpha})`);
+    grad.addColorStop(1, `rgba(160,160,160,${alpha})`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (mode === 'dead') {
+    text('GAME OVER', mx, my - 14, 32);
+    text(String(score).padStart(4, '0'), mx, my + 18, 18, FG, 600);
+    text('CLICK TO RETRY', mx, my + 46, 11, DIM, 400);
+  }
+
+  // cursor: ring (hitbox) + inner dot
+  if (rx >= 0) {
+    ctx.strokeStyle = FG;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(rx, ry, RING_R, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (dx_ >= 0) {
+    ctx.fillStyle = FG;
+    ctx.beginPath();
+    ctx.arc(dx_, dy_, DOT_R, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
