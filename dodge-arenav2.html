@@ -44,6 +44,7 @@ let best = parseInt(localStorage.getItem('arenaDodgerBest')) || 0;
 let mouseDown = false;
 let ringBroken = false;
 let ringShards = [];
+let cursorTrail = [];
 
 function resize() {
   DPR = devicePixelRatio || 1;
@@ -73,7 +74,7 @@ canvas.addEventListener('click', () => {
     tLastSpawn = tStart;
   } else if (mode === 'dead') {
     projectiles = []; score = 0; mode = 'idle';
-    ringBroken = false; ringShards = [];
+    ringBroken = false; ringShards = []; cursorTrail = [];
   }
 });
 
@@ -89,7 +90,6 @@ function breakRing() {
     const speed = Math.hypot(p.vx, p.vy);
     p.vx = dxv / len * speed;
     p.vy = dyv / len * speed;
-    p.trail = [];
   }
   // spawn ring shards
   ringShards = [];
@@ -144,7 +144,7 @@ function spawn(elapsed) {
   const len = Math.hypot(vx0, vy0) || 1;
   const speed = projectileSpeed(elapsed);
 
-  projectiles.push({ x, y, vx: vx0 / len * speed, vy: vy0 / len * speed, r: 5, trail: [] });
+  projectiles.push({ x, y, vx: vx0 / len * speed, vy: vy0 / len * speed, r: 5 });
 }
 
 function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
@@ -169,8 +169,6 @@ function frame(now) {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
     if (mode === 'playing') {
-      p.trail.push({ x: p.x, y: p.y });
-      if (p.trail.length > 10) p.trail.shift();
       p.x += p.vx;
       p.y += p.vy;
       if (!ringBroken) {
@@ -194,6 +192,14 @@ function frame(now) {
     s.rot += s.vr;
     s.life -= 0.02;
     if (s.life <= 0) ringShards.splice(i, 1);
+  }
+
+  // cursor trail (only when ring is broken & playing)
+  if (ringBroken && mode === 'playing' && dx_ >= 0) {
+    cursorTrail.push({ x: dx_, y: dy_ });
+    if (cursorTrail.length > 16) cursorTrail.shift();
+  } else if (!ringBroken && cursorTrail.length) {
+    cursorTrail = [];
   }
 
   if (mode === 'playing') {
@@ -275,19 +281,6 @@ function frame(now) {
     const dist = Math.max(pdx, pdy);
     const alpha = dist === 0 ? 1 : Math.max(0.18, 1 - dist / SPAWN_MARGIN * 0.82);
 
-    if (p.trail.length >= 2) {
-      for (let i = 1; i < p.trail.length; i++) {
-        const a = (i / p.trail.length) * 0.4 * alpha;
-        ctx.strokeStyle = `rgba(232,232,230,${a})`;
-        ctx.lineWidth = p.r * (i / p.trail.length) * 1.1;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(p.trail[i-1].x, p.trail[i-1].y);
-        ctx.lineTo(p.trail[i].x, p.trail[i].y);
-        ctx.stroke();
-      }
-    }
-
     const grad = ctx.createRadialGradient(p.x - p.r * 0.4, p.y - p.r * 0.4, 0, p.x, p.y, p.r);
     grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
     grad.addColorStop(0.7, `rgba(232,232,230,${alpha})`);
@@ -321,6 +314,19 @@ function frame(now) {
     ctx.moveTo(s.x - Math.cos(s.rot) * len, s.y - Math.sin(s.rot) * len);
     ctx.lineTo(s.x + Math.cos(s.rot) * len, s.y + Math.sin(s.rot) * len);
     ctx.stroke();
+  }
+  // cursor trail (when ring is broken)
+  if (cursorTrail.length >= 2) {
+    for (let i = 1; i < cursorTrail.length; i++) {
+      const a = (i / cursorTrail.length) * 0.5;
+      ctx.strokeStyle = `rgba(232,232,230,${a})`;
+      ctx.lineWidth = DOT_R * (i / cursorTrail.length) * 1.3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cursorTrail[i-1].x, cursorTrail[i-1].y);
+      ctx.lineTo(cursorTrail[i].x, cursorTrail[i].y);
+      ctx.stroke();
+    }
   }
   if (dx_ >= 0) {
     ctx.fillStyle = FG;
