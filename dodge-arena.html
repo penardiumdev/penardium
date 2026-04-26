@@ -42,6 +42,10 @@ let projectiles = [];
 let score = 0;
 let best = parseInt(localStorage.getItem('arenaDodgerBest')) || 0;
 let mouseDown = false;
+let ringBroken = false;
+let ringShards = [];
+let cursorTrail = [];
+let lastFrameTime = 0;
 
 function resize() {
   DPR = devicePixelRatio || 1;
@@ -71,10 +75,51 @@ canvas.addEventListener('click', () => {
     tLastSpawn = tStart;
   } else if (mode === 'dead') {
     projectiles = []; score = 0; mode = 'idle';
+    ringBroken = false; ringShards = []; cursorTrail = [];
+    lastFrameTime = 0;
   }
 });
 
 const inArena = () => rx >= ax && rx <= ax + ARENA_SIZE && ry >= ay && ry <= ay + ARENA_SIZE;
+
+function breakRing() {
+  ringBroken = true;
+  // scatter current projectiles outward from cursor position
+  const cullDist = SPAWN_MARGIN + 100;
+  const minX = ax - cullDist, maxX = ax + ARENA_SIZE + cullDist;
+  const minY = ay - cullDist, maxY = ay + ARENA_SIZE + cullDist;
+  for (const p of projectiles) {
+    const dxv = p.x - rx, dyv = p.y - ry;
+    const len = Math.hypot(dxv, dyv) || 1;
+    const speed = Math.hypot(p.vx, p.vy);
+    p.vx = dxv / len * speed;
+    p.vy = dyv / len * speed;
+    // restart preview from current scatter point
+    p.startX = p.x;
+    p.startY = p.y;
+    const tX = p.vx > 0 ? (maxX - p.x) / p.vx : p.vx < 0 ? (minX - p.x) / p.vx : Infinity;
+    const tY = p.vy > 0 ? (maxY - p.y) / p.vy : p.vy < 0 ? (minY - p.y) / p.vy : Infinity;
+    const tExit = Math.min(tX, tY);
+    p.exitX = p.x + p.vx * tExit;
+    p.exitY = p.y + p.vy * tExit;
+  }
+  // spawn ring shards
+  ringShards = [];
+  const shardCount = 14;
+  for (let i = 0; i < shardCount; i++) {
+    const ang = (i / shardCount) * Math.PI * 2 + Math.random() * 0.2;
+    const sp = 2 + Math.random() * 2.5;
+    ringShards.push({
+      x: rx + Math.cos(ang) * RING_R,
+      y: ry + Math.sin(ang) * RING_R,
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp,
+      rot: Math.random() * Math.PI * 2,
+      vr: (Math.random() - 0.5) * 0.3,
+      life: 1,
+    });
+  }
+}
 
 function gameOver() {
   mode = 'dead';
@@ -110,8 +155,18 @@ function spawn(elapsed) {
   const vx0 = tx - x, vy0 = ty - y;
   const len = Math.hypot(vx0, vy0) || 1;
   const speed = projectileSpeed(elapsed);
+  const vx = vx0 / len * speed, vy = vy0 / len * speed;
 
-  projectiles.push({ x, y, vx: vx0 / len * speed, vy: vy0 / len * speed, r: 5, trail: [] });
+  // precompute static exit point for trajectory preview
+  const cull = SPAWN_MARGIN + 100;
+  const minX = ax - cull, maxX = ax + ARENA_SIZE + cull;
+  const minY = ay - cull, maxY = ay + ARENA_SIZE + cull;
+  const tX = vx > 0 ? (maxX - x) / vx : vx < 0 ? (minX - x) / vx : Infinity;
+  const tY = vy > 0 ? (maxY - y) / vy : vy < 0 ? (minY - y) / vy : Infinity;
+  const tExit = Math.min(tX, tY);
+  const exitX = x + vx * tExit, exitY = y + vy * tExit;
+
+  projectiles.push({ x, y, vx, vy, r: 5, startX: x, startY: y, exitX, exitY });
 }
 
 function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
@@ -122,11 +177,18 @@ function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
 }
 
 function frame(now) {
+  // delta-time scaling: 1.0 = 144 FPS baseline (game was tuned at 144Hz). Capped so a paused tab doesn't teleport everything.
+  const dt = lastFrameTime === 0 ? 1 : Math.min(3, (now - lastFrameTime) / (1000 / 144));
+  lastFrameTime = now;
+
   if (rawX >= 0 && dx_ >= 0) {
-    dx_ += (rawX - dx_) * DOT_EASE;
-    dy_ += (rawY - dy_) * DOT_EASE;
-    rx += (rawX - rx) * RING_EASE;
-    ry += (rawY - ry) * RING_EASE;
+    // exponential easing made frame-rate independent
+    const dotK = 1 - Math.pow(1 - DOT_EASE, dt);
+    const ringK = 1 - Math.pow(1 - RING_EASE, dt);
+    dx_ += (rawX - dx_) * dotK;
+    dy_ += (rawY - dy_) * dotK;
+    rx += (rawX - rx) * ringK;
+    ry += (rawY - ry) * ringK;
   }
 
   if (mode === 'idle' && inArena()) { mode = 'countdown'; tCountdown = now; }
@@ -136,17 +198,37 @@ function frame(now) {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
     if (mode === 'playing') {
-      p.trail.push({ x: p.x, y: p.y });
-      if (p.trail.length > 10) p.trail.shift();
-      p.x += p.vx;
-      p.y += p.vy;
-      if (Math.hypot(p.x - rx, p.y - ry) < RING_R + p.r) gameOver();
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (!ringBroken) {
+        if (Math.hypot(p.x - rx, p.y - ry) < RING_R + p.r) breakRing();
+      } else {
+        if (Math.hypot(p.x - dx_, p.y - dy_) < DOT_R + p.r) gameOver();
+      }
     }
     const cull = SPAWN_MARGIN + 100;
     if (p.x < ax - cull || p.x > ax + ARENA_SIZE + cull ||
         p.y < ay - cull || p.y > ay + ARENA_SIZE + cull) {
       projectiles.splice(i, 1);
     }
+  }
+
+  // update ring shards
+  for (let i = ringShards.length - 1; i >= 0; i--) {
+    const s = ringShards[i];
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.rot += s.vr * dt;
+    s.life -= 0.02 * dt;
+    if (s.life <= 0) ringShards.splice(i, 1);
+  }
+
+  // cursor trail (only when ring is broken & playing)
+  if (ringBroken && mode === 'playing' && dx_ >= 0) {
+    cursorTrail.push({ x: dx_, y: dy_ });
+    if (cursorTrail.length > 16) cursorTrail.shift();
+  } else if (!ringBroken && cursorTrail.length) {
+    cursorTrail = [];
   }
 
   if (mode === 'playing') {
@@ -195,27 +277,18 @@ function frame(now) {
 
   // trajectory preview while mouse held
   if (mode === 'playing' && mouseDown) {
-    const cull = SPAWN_MARGIN + 100;
-    const bounds = {
-      minX: ax - cull, maxX: ax + ARENA_SIZE + cull,
-      minY: ay - cull, maxY: ay + ARENA_SIZE + cull,
-    };
     for (const p of projectiles) {
-      const tX = p.vx > 0 ? (bounds.maxX - p.x) / p.vx : p.vx < 0 ? (bounds.minX - p.x) / p.vx : Infinity;
-      const tY = p.vy > 0 ? (bounds.maxY - p.y) / p.vy : p.vy < 0 ? (bounds.minY - p.y) / p.vy : Infinity;
-      const t = Math.max(0, Math.min(tX, tY));
-      const endX = p.x + p.vx * t;
-      const endY = p.y + p.vy * t;
-
-      const grad = ctx.createLinearGradient(p.x, p.y, endX, endY);
+      // hide line once projectile leaves the arena square
+      if (p.x < ax || p.x > ax + ARENA_SIZE || p.y < ay || p.y > ay + ARENA_SIZE) continue;
+      const grad = ctx.createLinearGradient(p.startX, p.startY, p.exitX, p.exitY);
       grad.addColorStop(0, 'rgba(232,232,230,0.55)');
       grad.addColorStop(1, 'rgba(232,232,230,0)');
       ctx.strokeStyle = grad;
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(endX, endY);
+      ctx.moveTo(p.startX, p.startY);
+      ctx.lineTo(p.exitX, p.exitY);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -227,19 +300,6 @@ function frame(now) {
     const pdy = Math.max(0, ay - p.y, p.y - (ay + ARENA_SIZE));
     const dist = Math.max(pdx, pdy);
     const alpha = dist === 0 ? 1 : Math.max(0.18, 1 - dist / SPAWN_MARGIN * 0.82);
-
-    if (p.trail.length >= 2) {
-      for (let i = 1; i < p.trail.length; i++) {
-        const a = (i / p.trail.length) * 0.4 * alpha;
-        ctx.strokeStyle = `rgba(232,232,230,${a})`;
-        ctx.lineWidth = p.r * (i / p.trail.length) * 1.1;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(p.trail[i-1].x, p.trail[i-1].y);
-        ctx.lineTo(p.trail[i].x, p.trail[i].y);
-        ctx.stroke();
-      }
-    }
 
     const grad = ctx.createRadialGradient(p.x - p.r * 0.4, p.y - p.r * 0.4, 0, p.x, p.y, p.r);
     grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
@@ -258,12 +318,35 @@ function frame(now) {
   }
 
   // cursor: ring (hitbox) + inner dot
-  if (rx >= 0) {
+  if (rx >= 0 && !ringBroken) {
     ctx.strokeStyle = FG;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(rx, ry, RING_R, 0, Math.PI * 2);
     ctx.stroke();
+  }
+  // ring shards (break animation)
+  for (const s of ringShards) {
+    ctx.strokeStyle = `rgba(232,232,230,${Math.max(0, s.life)})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const len = 6;
+    ctx.moveTo(s.x - Math.cos(s.rot) * len, s.y - Math.sin(s.rot) * len);
+    ctx.lineTo(s.x + Math.cos(s.rot) * len, s.y + Math.sin(s.rot) * len);
+    ctx.stroke();
+  }
+  // cursor trail (when ring is broken)
+  if (cursorTrail.length >= 2) {
+    for (let i = 1; i < cursorTrail.length; i++) {
+      const a = (i / cursorTrail.length) * 0.5;
+      ctx.strokeStyle = `rgba(232,232,230,${a})`;
+      ctx.lineWidth = DOT_R * (i / cursorTrail.length) * 1.3;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cursorTrail[i-1].x, cursorTrail[i-1].y);
+      ctx.lineTo(cursorTrail[i].x, cursorTrail[i].y);
+      ctx.stroke();
+    }
   }
   if (dx_ >= 0) {
     ctx.fillStyle = FG;
