@@ -7,9 +7,26 @@
 <style>
   html, body { margin: 0; overflow: hidden; background: #1a1a1d; font-family: 'JetBrains Mono', monospace; }
   canvas { display: block; cursor: none; position: fixed; inset: 0; }
+  .nav-link {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #6b6b68;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 400;
+    text-decoration: none;
+    letter-spacing: 0.5px;
+    z-index: 10;
+    cursor: none;
+    transition: color 0.15s;
+  }
+  .nav-link:hover { color: #e8e8e6; }
 </style>
 </head>
 <body>
+<a href="https://penardium.com/memory-arena.html" class="nav-link">TRY PENARDIUM MEMORY ARENA →</a>
 <canvas id="arena"></canvas>
 <script>
 const canvas = document.getElementById('arena');
@@ -46,6 +63,8 @@ let ringBroken = false;
 let ringShards = [];
 let cursorTrail = [];
 let lastFrameTime = 0;
+let hoverScale = 1;
+let hoverTarget = 1;
 
 function resize() {
   DPR = devicePixelRatio || 1;
@@ -68,6 +87,10 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mousedown', () => { mouseDown = true; });
 addEventListener('mouseup', () => { mouseDown = false; });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+const navLink = document.querySelector('.nav-link');
+navLink.addEventListener('mouseenter', () => { hoverTarget = 1.4; });
+navLink.addEventListener('mouseleave', () => { hoverTarget = 1; });
 canvas.addEventListener('click', () => {
   if (mode === 'countdown' && inArena()) {
     mode = 'playing';
@@ -190,6 +213,10 @@ function frame(now) {
     rx += (rawX - rx) * ringK;
     ry += (rawY - ry) * ringK;
   }
+
+  // smoothly scale cursor toward hover target
+  const scaleK = 1 - Math.pow(1 - 0.25, dt);
+  hoverScale += (hoverTarget - hoverScale) * scaleK;
 
   if (mode === 'idle' && inArena()) { mode = 'countdown'; tCountdown = now; }
   if (mode === 'countdown' && !inArena()) mode = 'idle';
@@ -322,7 +349,7 @@ function frame(now) {
     ctx.strokeStyle = FG;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(rx, ry, RING_R, 0, Math.PI * 2);
+    ctx.arc(rx, ry, RING_R * hoverScale, 0, Math.PI * 2);
     ctx.stroke();
   }
   // ring shards (break animation)
@@ -351,7 +378,7 @@ function frame(now) {
   if (dx_ >= 0) {
     ctx.fillStyle = FG;
     ctx.beginPath();
-    ctx.arc(dx_, dy_, DOT_R, 0, Math.PI * 2);
+    ctx.arc(dx_, dy_, DOT_R * hoverScale, 0, Math.PI * 2);
     ctx.fill();
   }
 
