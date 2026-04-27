@@ -5,8 +5,11 @@
 <title>Arena Dribbler</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; overflow: hidden; background: #1a1a1d; font-family: 'JetBrains Mono', monospace; }
-  canvas { display: block; cursor: none; position: fixed; inset: 0; }
+  html, body { margin: 0; overflow: hidden; background: #1a1a1d; font-family: 'JetBrains Mono', monospace; cursor: none; }
+  *, *::before, *::after { cursor: none !important; }
+  canvas { display: block; position: fixed; inset: 0; }
+  canvas#arena { cursor: none; }
+  canvas#cursorLayer { pointer-events: none; z-index: 20; }
   .nav {
     position: fixed;
     top: 16px;
@@ -32,6 +35,67 @@
   .nav a.hover { color: #e8e8e6; }
   .nav .current { color: #6b6b68; }
   .nav .sep { color: #3d3d40; }
+
+  .palette {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .palette-btn {
+    background: transparent;
+    border: 1.5px solid #3d3d40;
+    color: #6b6b68;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    padding: 6px 10px;
+    cursor: none;
+    transition: color 0.15s, border-color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .palette-btn:hover, .palette-btn.hover {
+    color: #e8e8e6;
+    border-color: #e8e8e6;
+  }
+  .palette-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #e8e8e6;
+  }
+  .palette-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: #1a1a1d;
+    border: 1.5px solid #3d3d40;
+    padding: 8px;
+    display: none;
+    grid-template-columns: repeat(7, auto);
+    gap: 6px;
+  }
+  .palette-menu.open { display: grid; }
+  .palette-option {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    cursor: none;
+    border: 1.5px solid transparent;
+    transition: border-color 0.15s, transform 0.15s;
+    padding: 0;
+  }
+  .palette-option:hover, .palette-option.hover {
+    transform: scale(1.15);
+  }
+  .palette-option.selected {
+    border-color: #e8e8e6;
+  }
 </style>
 </head>
 <body>
@@ -42,10 +106,20 @@
   <span class="sep">·</span>
   <a href="https://penardium.com/memory-arena.html" data-game="memory">MEMORY ARENA</a>
 </nav>
+<div class="palette">
+  <button class="palette-btn" id="paletteBtn">
+    <span class="palette-swatch" id="paletteSwatch"></span>
+    <span>CURSOR</span>
+  </button>
+  <div class="palette-menu" id="paletteMenu"></div>
+</div>
 <canvas id="arena"></canvas>
+<canvas id="cursorLayer"></canvas>
 <script>
 const canvas = document.getElementById('arena');
 const ctx = canvas.getContext('2d');
+const cursorCanvas = document.getElementById('cursorLayer');
+const cctx = cursorCanvas.getContext('2d');
 
 // --- config ---
 const ARENA_SIZE = 300;
@@ -54,6 +128,18 @@ const RING_R = 18;
 const DOT_EASE = 0.22;
 const RING_EASE = 0.16;
 const BG = '#1a1a1d', FG = '#e8e8e6', DIM = '#6b6b68';
+
+// --- cursor color palette (shared across all 3 arenas via localStorage) ---
+const PALETTE = [
+  { name: 'DEFAULT', value: '#e8e8e6' },
+  { name: 'RED',     value: '#e85d4a' },
+  { name: 'AMBER',   value: '#e8a64a' },
+  { name: 'LIME',    value: '#a8e84a' },
+  { name: 'MINT',    value: '#4ae8b4' },
+  { name: 'BLUE',    value: '#4aa6e8' },
+  { name: 'VIOLET',  value: '#b44ae8' },
+];
+let cursorColor = localStorage.getItem('arenaCursorColor') || PALETTE[0].value;
 
 const BALL_R = 9;
 const GRAVITY = 0.045;          // per (1/144)s frame at dt=1
@@ -94,13 +180,18 @@ function resize() {
   canvas.width = W * DPR;
   canvas.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  cursorCanvas.style.width = W + 'px';
+  cursorCanvas.style.height = H + 'px';
+  cursorCanvas.width = W * DPR;
+  cursorCanvas.height = H * DPR;
+  cctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ax = (W - ARENA_SIZE) / 2;
   ay = (H - ARENA_SIZE) / 2;
 }
 addEventListener('resize', resize);
 resize();
 
-canvas.addEventListener('mousemove', e => {
+window.addEventListener('mousemove', e => {
   rawX = e.clientX; rawY = e.clientY;
   if (dx_ < 0) { dx_ = rawX; dy_ = rawY; rx = rawX; ry = rawY; prevRx = rawX; prevRy = rawY; }
 });
@@ -111,7 +202,59 @@ let navRects = navLinks.map(el => el.getBoundingClientRect());
 const refreshNavRects = () => { navRects = navLinks.map(el => el.getBoundingClientRect()); };
 addEventListener('resize', refreshNavRects);
 
-canvas.addEventListener('mousemove', e => {
+// --- palette menu setup ---
+const paletteBtn = document.getElementById('paletteBtn');
+const paletteMenu = document.getElementById('paletteMenu');
+const paletteSwatch = document.getElementById('paletteSwatch');
+let paletteOpen = false;
+
+PALETTE.forEach(p => {
+  const opt = document.createElement('button');
+  opt.className = 'palette-option';
+  opt.style.background = p.value;
+  opt.dataset.color = p.value;
+  opt.title = p.name;
+  if (p.value === cursorColor) opt.classList.add('selected');
+  opt.addEventListener('click', (e) => {
+    e.stopPropagation();
+    cursorColor = p.value;
+    localStorage.setItem('arenaCursorColor', cursorColor);
+    paletteSwatch.style.background = cursorColor;
+    [...paletteMenu.children].forEach(c => c.classList.toggle('selected', c.dataset.color === cursorColor));
+    paletteMenu.classList.remove('open');
+    paletteOpen = false;
+    refreshPaletteRects();
+  });
+  paletteMenu.appendChild(opt);
+});
+paletteSwatch.style.background = cursorColor;
+
+paletteBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  paletteOpen = !paletteOpen;
+  paletteMenu.classList.toggle('open', paletteOpen);
+  refreshPaletteRects();
+});
+addEventListener('click', () => {
+  if (paletteOpen) {
+    paletteOpen = false;
+    paletteMenu.classList.remove('open');
+    refreshPaletteRects();
+  }
+});
+
+let paletteBtnRect = paletteBtn.getBoundingClientRect();
+let paletteOptionRects = [];
+const refreshPaletteRects = () => {
+  paletteBtnRect = paletteBtn.getBoundingClientRect();
+  paletteOptionRects = [...paletteMenu.children].map(el => ({
+    el, rect: el.getBoundingClientRect()
+  }));
+};
+addEventListener('resize', refreshPaletteRects);
+refreshPaletteRects();
+
+window.addEventListener('mousemove', e => {
   let anyHover = false;
   for (let i = 0; i < navLinks.length; i++) {
     const r = navRects[i];
@@ -128,6 +271,15 @@ canvas.addEventListener('mousemove', e => {
 });
 
 canvas.addEventListener('click', (e) => {
+  // palette UI swallows clicks too
+  if (e.clientX >= paletteBtnRect.left && e.clientX <= paletteBtnRect.right
+   && e.clientY >= paletteBtnRect.top && e.clientY <= paletteBtnRect.bottom) return;
+  if (paletteOpen) {
+    for (const { rect } of paletteOptionRects) {
+      if (e.clientX >= rect.left && e.clientX <= rect.right
+       && e.clientY >= rect.top && e.clientY <= rect.bottom) return;
+    }
+  }
   // check nav links first — they swallow the click
   for (let i = 0; i < navLinks.length; i++) {
     const r = navRects[i];
@@ -241,6 +393,14 @@ function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
   ctx.font = `${weight} ${size}px "JetBrains Mono", monospace`;
   ctx.textAlign = align;
   ctx.fillText(str, x, y);
+}
+
+function cursorRgba(alpha) {
+  const h = cursorColor.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
 function drawBall(b) {
@@ -394,7 +554,7 @@ function frame(now) {
   // particles
   for (const p of particles) {
     const a = Math.max(0, p.life);
-    ctx.fillStyle = `rgba(232,232,230,${a})`;
+    ctx.fillStyle = cursorRgba(a);
     ctx.beginPath();
     ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2);
     ctx.fill();
@@ -406,22 +566,24 @@ function frame(now) {
     text('CLICK TO RETRY', mx, my + 46, 11, DIM, 400);
   }
 
+  // --- cursor layer (rendered on top of all DOM UI) ---
+  cctx.clearRect(0, 0, W, H);
   // cursor: ring + inner dot
   if (rx >= 0) {
     const pulseR = RING_R * hoverScale + kickPulse * 8;
-    ctx.strokeStyle = `rgba(232,232,230,${1 - kickPulse * 0.4})`;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(rx, ry, pulseR, 0, Math.PI * 2);
-    ctx.stroke();
+    cctx.strokeStyle = cursorRgba(1 - kickPulse * 0.4);
+    cctx.lineWidth = 1.5;
+    cctx.beginPath();
+    cctx.arc(rx, ry, pulseR, 0, Math.PI * 2);
+    cctx.stroke();
 
     // expanding shockwave on kick
     if (kickPulse > 0.05) {
-      ctx.strokeStyle = `rgba(232,232,230,${kickPulse * 0.5})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(rx, ry, RING_R + (1 - kickPulse) * 28, 0, Math.PI * 2);
-      ctx.stroke();
+      cctx.strokeStyle = cursorRgba(kickPulse * 0.5);
+      cctx.lineWidth = 1;
+      cctx.beginPath();
+      cctx.arc(rx, ry, RING_R + (1 - kickPulse) * 28, 0, Math.PI * 2);
+      cctx.stroke();
     }
   }
 
@@ -429,21 +591,21 @@ function frame(now) {
   if (cursorTrail.length >= 2) {
     for (let i = 1; i < cursorTrail.length; i++) {
       const a = (i / cursorTrail.length) * 0.45;
-      ctx.strokeStyle = `rgba(232,232,230,${a})`;
-      ctx.lineWidth = DOT_R * (i / cursorTrail.length) * 1.3;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(cursorTrail[i-1].x, cursorTrail[i-1].y);
-      ctx.lineTo(cursorTrail[i].x, cursorTrail[i].y);
-      ctx.stroke();
+      cctx.strokeStyle = cursorRgba(a);
+      cctx.lineWidth = DOT_R * (i / cursorTrail.length) * 1.3;
+      cctx.lineCap = 'round';
+      cctx.beginPath();
+      cctx.moveTo(cursorTrail[i-1].x, cursorTrail[i-1].y);
+      cctx.lineTo(cursorTrail[i].x, cursorTrail[i].y);
+      cctx.stroke();
     }
   }
 
   if (dx_ >= 0) {
-    ctx.fillStyle = FG;
-    ctx.beginPath();
-    ctx.arc(dx_, dy_, DOT_R * hoverScale, 0, Math.PI * 2);
-    ctx.fill();
+    cctx.fillStyle = cursorColor;
+    cctx.beginPath();
+    cctx.arc(dx_, dy_, DOT_R * hoverScale, 0, Math.PI * 2);
+    cctx.fill();
   }
 
   requestAnimationFrame(frame);
