@@ -102,6 +102,7 @@ function startGame() {
 }
 
 function gameOver() {
+  finalTime = mode === 'recall' ? (performance.now() - tRecallStart) / 1000 : 0;
   mode = 'dead';
 }
 
@@ -133,8 +134,7 @@ canvas.addEventListener('click', () => {
         return;
       }
     }
-    // clicked empty space inside arena during recall — also fail (prevents random clicking)
-    if (inArena()) gameOver();
+    // empty click: ignored
     return;
   }
   if (mode === 'dead' || mode === 'done') {
@@ -152,8 +152,8 @@ function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
 }
 
 function formatScore(t) {
-  // t in seconds → integer centiseconds, padded to 4 digits
-  return String(Math.floor(t * 100)).padStart(4, '0');
+  // t in seconds → 100 points per second for precision (e.g. 3.02s = 302)
+  return String(Math.floor(t * 100));
 }
 
 let lastFrameTime = 0;
@@ -184,6 +184,7 @@ function frame(now) {
 
   if (mode === 'idle' && inArena()) { mode = 'countdown'; tCountdown = now; }
   if (mode === 'countdown' && !inArena()) mode = 'idle';
+  if ((mode === 'memorize' || mode === 'recall') && !inArena()) gameOver();
 
   if (mode === 'memorize' && now - tMemorizeStart >= MEMORIZE_MS) {
     mode = 'recall';
@@ -200,7 +201,7 @@ function frame(now) {
 
   // BEST header
   text('BEST', ax + ARENA_SIZE / 2, ay - 44, 11, DIM, 400);
-  text(best === 0 ? '----' : formatScore(best), ax + ARENA_SIZE / 2, ay - 16, 28, FG, 800);
+  text(best === 0 ? '---' : formatScore(best), ax + ARENA_SIZE / 2, ay - 16, 28, FG, 800);
 
   // arena border
   ctx.strokeStyle = FG;
@@ -221,21 +222,18 @@ function frame(now) {
     }
   }
 
-  // memorize: show numbers + countdown
+  // memorize: show numbers + big countdown watermark
   if (mode === 'memorize') {
     const remaining = Math.max(0, MEMORIZE_MS - (now - tMemorizeStart));
+    text(Math.ceil(remaining / 1000), mx, my + 40, 120, 'rgba(232,232,230,0.06)');
     drawCircles(true);
-    // small countdown above arena
-    text('MEMORIZE', ax + ARENA_SIZE / 2, ay + ARENA_SIZE + 24, 11, DIM, 400);
-    text((remaining / 1000).toFixed(1), ax + ARENA_SIZE / 2, ay + ARENA_SIZE + 48, 18, FG, 800);
   }
 
-  // recall: blank circles + live timer
+  // recall: blank circles + live timer watermark
   if (mode === 'recall') {
-    drawCircles(false);
     const elapsed = (now - tRecallStart) / 1000;
-    text('TIME', ax + ARENA_SIZE / 2, ay + ARENA_SIZE + 24, 11, DIM, 400);
-    text(formatScore(elapsed), ax + ARENA_SIZE / 2, ay + ARENA_SIZE + 48, 18, FG, 800);
+    text(formatScore(elapsed), mx, my + 40, 120, 'rgba(232,232,230,0.06)');
+    drawCircles(false);
   }
 
   if (mode === 'done') {
@@ -246,7 +244,8 @@ function frame(now) {
 
   if (mode === 'dead') {
     text('GAME OVER', mx, my - 14, 32);
-    text('CLICK TO RETRY', mx, my + 22, 11, DIM, 400);
+    text(formatScore(finalTime), mx, my + 18, 18, FG, 600);
+    text('CLICK TO RETRY', mx, my + 46, 11, DIM, 400);
   }
 
   // cursor
