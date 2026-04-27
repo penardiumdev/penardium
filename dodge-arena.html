@@ -7,26 +7,41 @@
 <style>
   html, body { margin: 0; overflow: hidden; background: #1a1a1d; font-family: 'JetBrains Mono', monospace; }
   canvas { display: block; cursor: none; position: fixed; inset: 0; }
-  .nav-link {
+  .nav {
     position: fixed;
     top: 16px;
     left: 50%;
     transform: translateX(-50%);
-    color: #6b6b68;
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    z-index: 10;
+    pointer-events: none;
     font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
     font-weight: 400;
-    text-decoration: none;
     letter-spacing: 0.5px;
-    z-index: 10;
-    cursor: none;
+    white-space: nowrap;
+  }
+  .nav a, .nav span {
+    color: #3d3d40;
+    text-decoration: none;
+    pointer-events: none;
     transition: color 0.15s;
   }
-  .nav-link:hover { color: #e8e8e6; }
+  .nav a.hover { color: #e8e8e6; }
+  .nav .current { color: #6b6b68; }
+  .nav .sep { color: #3d3d40; }
 </style>
 </head>
 <body>
-<a href="https://penardium.com/memory-arena.html" class="nav-link">TRY PENARDIUM MEMORY ARENA →</a>
+<nav class="nav">
+  <a href="https://penardium.com/dribble-arena.html" data-game="dribble">ARENA DRIBBLER</a>
+  <span class="sep">·</span>
+  <span class="current">DODGE ARENA</span>
+  <span class="sep">·</span>
+  <a href="https://penardium.com/memory-arena.html" data-game="memory">MEMORY ARENA</a>
+</nav>
 <canvas id="arena"></canvas>
 <script>
 const canvas = document.getElementById('arena');
@@ -88,10 +103,37 @@ canvas.addEventListener('mousedown', () => { mouseDown = true; });
 addEventListener('mouseup', () => { mouseDown = false; });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-const navLink = document.querySelector('.nav-link');
-navLink.addEventListener('mouseenter', () => { hoverTarget = 1.4; });
-navLink.addEventListener('mouseleave', () => { hoverTarget = 1; });
-canvas.addEventListener('click', () => {
+const navLinks = [...document.querySelectorAll('.nav a')];
+let navRects = navLinks.map(el => el.getBoundingClientRect());
+const refreshNavRects = () => { navRects = navLinks.map(el => el.getBoundingClientRect()); };
+addEventListener('resize', refreshNavRects);
+
+canvas.addEventListener('mousemove', e => {
+  let anyHover = false;
+  for (let i = 0; i < navLinks.length; i++) {
+    const r = navRects[i];
+    const inside = e.clientX >= r.left && e.clientX <= r.right
+                && e.clientY >= r.top && e.clientY <= r.bottom;
+    if (inside) {
+      navLinks[i].classList.add('hover');
+      anyHover = true;
+    } else {
+      navLinks[i].classList.remove('hover');
+    }
+  }
+  hoverTarget = anyHover ? 1.4 : 1;
+});
+canvas.addEventListener('click', (e) => {
+  // nav links swallow the click
+  for (let i = 0; i < navLinks.length; i++) {
+    const r = navRects[i];
+    if (e.clientX >= r.left && e.clientX <= r.right
+     && e.clientY >= r.top && e.clientY <= r.bottom) {
+      const href = navLinks[i].getAttribute('href');
+      if (href) window.location.href = href;
+      return;
+    }
+  }
   if (mode === 'countdown' && inArena()) {
     mode = 'playing';
     tStart = performance.now();
