@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Approach Arena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; overflow: hidden; background: #1a1a1d; font-family: "Archivo Black", sans-serif; cursor: none; }
+  *, *::before, *::after { cursor: none !important; }
+  canvas { display: block; position: fixed; inset: 0; }
+  canvas#arena { cursor: none; }
+  canvas#cursorLayer { pointer-events: none; z-index: 20; }
+  .palette {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    font-family: "Archivo Black", sans-serif;
+  }
+  .palette-btn {
+    background: transparent;
+    border: 1.5px solid #3d3d40;
+    color: #6b6b68;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    padding: 6px 10px;
+    cursor: none;
+    transition: color 0.15s, border-color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .palette-btn:hover, .palette-btn.hover {
+    color: #e8e8e6;
+    border-color: #e8e8e6;
+  }
+  .palette-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #e8e8e6;
+  }
+  .palette-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: #1a1a1d;
+    border: 1.5px solid #3d3d40;
+    padding: 8px;
+    display: none;
+    grid-template-columns: repeat(7, auto);
+    gap: 6px;
+  }
+  .palette-menu.open { display: grid; }
+  .palette-option {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    cursor: none;
+    border: 1.5px solid transparent;
+    transition: border-color 0.15s, transform 0.15s;
+    padding: 0;
+  }
+  .palette-option:hover, .palette-option.hover {
+    transform: scale(1.15);
+  }
+  .palette-option.selected {
+    border-color: #e8e8e6;
+  }
+</style>
+</head>
+<body>
+<div class="palette">
+  <button class="palette-btn" id="paletteBtn">
+    <span class="palette-swatch" id="paletteSwatch"></span>
+    <span>CURSOR</span>
+  </button>
+  <div class="palette-menu" id="paletteMenu"></div>
+</div>
+<canvas id="arena"></canvas>
+<canvas id="cursorLayer"></canvas>
+<script src="nav.js"></script>
+<script>
+const canvas = document.getElementById('arena');
+const ctx = canvas.getContext('2d');
+const cursorCanvas = document.getElementById('cursorLayer');
+const cctx = cursorCanvas.getContext('2d');
+
+// offscreen canvas used for the frosted-glass blur over the arena interior
+const blurCanvas = document.createElement('canvas');
+const bctx = blurCanvas.getContext('2d');
+
+// --- config ---
+const ARENA_SIZE = 300;
+const DOT_R = 4;
+const RING_R = 18;            // ring IS the hitbox
+const DOT_EASE = 0.22;
+const RING_EASE = 0.16;
+const BG = '#1a1a1d', FG = '#e8e8e6', DIM = '#6b6b68';
+
+// --- cursor color palette (shared across all 3 arenas via localStorage) ---
+const PALETTE = [
+  { name: 'DEFAULT', value: '#e8e8e6' },
+  { name: 'RED',     value: '#e85d4a' },
+  { name: 'AMBER',   value: '#e8a64a' },
+  { name: 'LIME',    value: '#a8e84a' },
+  { name: 'MINT',    value: '#4ae8b4' },
+  { name: 'BLUE',    value: '#4aa6e8' },
+  { name: 'VIOLET',  value: '#b44ae8' },
+];
+let cursorColor = localStorage.getItem('arenaCursorColor') || PALETTE[0].value;
+
+// --- approach game tuning ---
+// Each circle has a "depth" z that goes from 0 (far) to 1 (at the screen).
+// Visible radius is interpolated from MIN_R to MAX_R based on z.
+// Circle also drifts across the arena plane with vx/vy so it has a direction.
+// Hover over it (cursor ring center inside circle) before z hits 1 to score.
+const MIN_R = 2.5;
+const MAX_R = 30;
+const START_INTERVAL = 850;
+const MIN_INTERVAL = 220;
+const DENSITY_RAMP_MS = 30000;
+const BASE_APPROACH = 0.00018;     // z gained per ms at start (~5.5s travel time)
+const APPROACH_PER_SEC = 0.000018; // additional per second of play (ramps from start)
+const DRIFT_BASE = 0.012;          // px/ms at z=0 (slow when far)
+const DRIFT_GROWTH = 3.2;          // multiplier as z approaches 1 (parallax)
+
+// --- animated background blobs ---
+const BG_BLOBS = [
+  { color: '88,60,140',  baseR: 520, ax: 0.32, ay: 0.45, kx: 0.000045, ky: 0.000033, phaseX: 0.0, phaseY: 1.7, alpha: 0.55 },
+  { color: '180,74,232', baseR: 460, ax: 0.28, ay: 0.40, kx: 0.000058, ky: 0.000041, phaseX: 2.1, phaseY: 0.4, alpha: 0.40 },
+  { color: '74,166,232', baseR: 580, ax: 0.36, ay: 0.50, kx: 0.000034, ky: 0.000049, phaseX: 4.3, phaseY: 2.9, alpha: 0.45 },
+  { color: '232,93,74',  baseR: 420, ax: 0.30, ay: 0.42, kx: 0.000052, ky: 0.000028, phaseX: 5.6, phaseY: 4.1, alpha: 0.30 },
+];
+
+// --- state ---
+let W, H, ax, ay, DPR = 1;
+let rawX = -1, rawY = -1;
+let dx_ = -1, dy_ = -1;        // inner dot
+let rx = -1, ry = -1;          // outer ring (hitbox)
+let mode = 'idle';
+let tCountdown = 0, tStart = 0, tLastSpawn = 0, tNow = 0;
+let circles = [];
+let pops = [];                  // hit-feedback particles
+let score = 0;
+let best = parseInt(localStorage.getItem('arenaApproachBest')) || 0;
+let mouseDown = false;
+let lastFrameTime = 0;
+let hoverScale = 1;
+let hoverTarget = 1;
+let flashUntil = 0;             // red border flash on miss
+
+function resize() {
+  DPR = devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  cursorCanvas.style.width = W + 'px';
+  cursorCanvas.style.height = H + 'px';
+  cursorCanvas.width = W * DPR;
+  cursorCanvas.height = H * DPR;
+  cctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // blur canvas sized to the arena region (with margin so blur edges don't clip)
+  const blurMargin = 40;
+  blurCanvas.width = (ARENA_SIZE + blurMargin * 2) * DPR;
+  blurCanvas.height = (ARENA_SIZE + blurMargin * 2) * DPR;
+  bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ax = (W - ARENA_SIZE) / 2;
+  ay = (H - ARENA_SIZE) / 2;
+}
+addEventListener('resize', resize);
+resize();
+
+window.addEventListener('mousemove', e => {
+  rawX = e.clientX; rawY = e.clientY;
+  if (dx_ < 0) { dx_ = rawX; dy_ = rawY; rx = rawX; ry = rawY; }
+});
+canvas.addEventListener('mousedown', () => { mouseDown = true; });
+addEventListener('mouseup', () => { mouseDown = false; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// --- palette menu setup ---
+const paletteBtn = document.getElementById('paletteBtn');
+const paletteMenu = document.getElementById('paletteMenu');
+const paletteSwatch = document.getElementById('paletteSwatch');
+let paletteOpen = false;
+
+PALETTE.forEach(p => {
+  const opt = document.createElement('button');
+  opt.className = 'palette-option';
+  opt.style.background = p.value;
+  opt.dataset.color = p.value;
+  opt.title = p.name;
+  if (p.value === cursorColor) opt.classList.add('selected');
+  opt.addEventListener('click', (e) => {
+    e.stopPropagation();
+    cursorColor = p.value;
+    localStorage.setItem('arenaCursorColor', cursorColor);
+    paletteSwatch.style.background = cursorColor;
+    [...paletteMenu.children].forEach(c => c.classList.toggle('selected', c.dataset.color === cursorColor));
+    paletteMenu.classList.remove('open');
+    paletteOpen = false;
+    refreshPaletteRects();
+  });
+  paletteMenu.appendChild(opt);
+});
+paletteSwatch.style.background = cursorColor;
+
+paletteBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  paletteOpen = !paletteOpen;
+  paletteMenu.classList.toggle('open', paletteOpen);
+  refreshPaletteRects();
+});
+
+// click anywhere else closes the palette menu (nav handles itself)
+addEventListener('click', () => {
+  if (paletteOpen) {
+    paletteOpen = false;
+    paletteMenu.classList.remove('open');
+    refreshPaletteRects();
+  }
+});
+
+let paletteBtnRect = paletteBtn.getBoundingClientRect();
+let paletteOptionRects = [];
+const refreshPaletteRects = () => {
+  paletteBtnRect = paletteBtn.getBoundingClientRect();
+  paletteOptionRects = [...paletteMenu.children].map(el => ({
+    el, rect: el.getBoundingClientRect()
+  }));
+};
+addEventListener('resize', refreshPaletteRects);
+refreshPaletteRects();
+
+const inRect = (x, y, r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+
+window.addEventListener('mousemove', e => {
+  const navHover = window.GameNav.updateHover(e.clientX, e.clientY);
+  hoverTarget = navHover ? 1.4 : 1;
+});
+canvas.addEventListener('click', (e) => {
+  // palette UI swallows clicks
+  if (inRect(e.clientX, e.clientY, paletteBtnRect)) return;
+  if (paletteOpen) {
+    for (const { rect } of paletteOptionRects) {
+      if (inRect(e.clientX, e.clientY, rect)) return;
+    }
+  }
+  // nav swallows clicks (and navigates if a menu item was clicked)
+  if (window.GameNav.handleClick(e.clientX, e.clientY)) return;
+  if (mode === 'countdown' && inArena()) {
+    mode = 'playing';
+    tStart = performance.now();
+    tLastSpawn = tStart;
+  } else if (mode === 'dead') {
+    circles = []; pops = []; score = 0; mode = 'idle';
+    lastFrameTime = 0;
+  }
+});
+
+const inArena = () => rx >= ax && rx <= ax + ARENA_SIZE && ry >= ay && ry <= ay + ARENA_SIZE;
+
+function gameOver() {
+  mode = 'dead';
+  flashUntil = tNow + 350;
+  if (score > best) {
+    best = score;
+    localStorage.setItem('arenaApproachBest', best);
+  }
+}
+
+function spawnInterval(elapsed) {
+  const t = Math.min(1, elapsed / DENSITY_RAMP_MS);
+  return START_INTERVAL + (MIN_INTERVAL - START_INTERVAL) * t;
+}
+
+function approachRate(elapsed) {
+  // how fast circles grow from far (z=0) to near (z=1), per ms — ramps from start
+  const rampSeconds = Math.max(0, elapsed / 1000);
+  return BASE_APPROACH + rampSeconds * APPROACH_PER_SEC;
+}
+
+function spawn(elapsed) {
+  // Spawn point: anywhere inside the arena, with margin so the circle has
+  // room to drift before reaching the edge.
+  const margin = 40;
+  const sx = ax + margin + Math.random() * (ARENA_SIZE - margin * 2);
+  const sy = ay + margin + Math.random() * (ARENA_SIZE - margin * 2);
+
+  // Drift direction is random; speed ramps with elapsed playtime so the
+  // game gets harder. Drift is in px/ms at z=0 and amplifies via parallax
+  // as z grows (closer things appear to move faster).
+  const angle = Math.random() * Math.PI * 2;
+  const rampSec = elapsed / 1000;
+  const driftMul = 1 + rampSec * 0.045;       // +4.5% per second
+  const driftSpeed = DRIFT_BASE * (0.7 + Math.random() * 0.7) * driftMul;
+  const vx = Math.cos(angle) * driftSpeed;
+  const vy = Math.sin(angle) * driftSpeed;
+
+  // Per-circle approach rate also pulled from the time-ramped curve.
+  const rate = approachRate(elapsed) * (0.75 + Math.random() * 0.6);
+
+  circles.push({
+    x: sx, y: sy,
+    vx, vy,
+    z: 0,
+    rate,
+  });
+}
+
+function popAt(x, y, r, points) {
+  // small expanding ring + tiny particles
+  pops.push({ x, y, r0: r, r: r, life: 1, ring: true });
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
+    const sp = 1.5 + Math.random() * 2;
+    pops.push({
+      x, y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life: 1,
+      ring: false,
+    });
+  }
+  // floating "+N" text
+  if (points) {
+    pops.push({ x, y, life: 1, text: '+' + points, vy: -0.6 });
+  }
+}
+
+function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px "Archivo Black", sans-serif`;
+  ctx.textAlign = align;
+  ctx.fillText(str, x, y);
+}
+
+function cursorRgba(alpha) {
+  const h = cursorColor.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function drawBackground(now) {
+  // base
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  // blobs use 'lighter' so they additively brighten the base instead of
+  // muddying it. Each blob's center sweeps across the screen via independent
+  // sine waves so the pattern never repeats in a way you can latch onto.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const b of BG_BLOBS) {
+    const cx = W * 0.5 + Math.sin(now * b.kx + b.phaseX) * W * b.ax;
+    const cy = H * 0.5 + Math.cos(now * b.ky + b.phaseY) * H * b.ay;
+    const r = b.baseR + Math.sin(now * 0.0004 + b.phaseX) * 60;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0,    `rgba(${b.color},${b.alpha})`);
+    grad.addColorStop(0.4,  `rgba(${b.color},${b.alpha * 0.4})`);
+    grad.addColorStop(1,    `rgba(${b.color},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
+
+  // subtle vignette to keep edges dark and bring focus inward
+  const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H) * 0.35, W/2, H/2, Math.max(W,H) * 0.75);
+  vg.addColorStop(0, 'rgba(26,26,29,0)');
+  vg.addColorStop(1, 'rgba(26,26,29,0.85)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function frame(now) {
+  tNow = now;
+  // delta-time scaling: 1.0 = 144 FPS baseline. Capped so a paused tab doesn't teleport everything.
+  const dt = lastFrameTime === 0 ? 1 : Math.min(3, (now - lastFrameTime) / (1000 / 144));
+  const dtMs = lastFrameTime === 0 ? 7 : Math.min(50, now - lastFrameTime);
+  lastFrameTime = now;
+
+  if (rawX >= 0 && dx_ >= 0) {
+    const dotK = 1 - Math.pow(1 - DOT_EASE, dt);
+    const ringK = 1 - Math.pow(1 - RING_EASE, dt);
+    dx_ += (rawX - dx_) * dotK;
+    dy_ += (rawY - dy_) * dotK;
+    rx += (rawX - rx) * ringK;
+    ry += (rawY - ry) * ringK;
+  }
+
+  // smoothly scale cursor toward hover target
+  const scaleK = 1 - Math.pow(1 - 0.25, dt);
+  hoverScale += (hoverTarget - hoverScale) * scaleK;
+
+  if (mode === 'idle' && inArena()) { mode = 'countdown'; tCountdown = now; }
+  if (mode === 'countdown' && !inArena()) mode = 'idle';
+  if (mode === 'playing' && !inArena()) gameOver();
+
+  // --- update circles ---
+  if (mode === 'playing') {
+    for (let i = circles.length - 1; i >= 0; i--) {
+      const c = circles[i];
+      // depth grows toward 1
+      c.z += c.rate * dtMs;
+      // drift in plane, scaled by depth (parallax: closer things appear faster)
+      const driftMul = 1 + c.z * DRIFT_GROWTH;
+      c.x += c.vx * dtMs * driftMul;
+      c.y += c.vy * dtMs * driftMul;
+
+      // current radius from depth (ease-in cubic for nicer zoom feel)
+      const ez = c.z * c.z;
+      const r = MIN_R + (MAX_R - MIN_R) * ez;
+
+      // bounce off the inner walls of the arena. We use the visible radius
+      // so the circle visually "kisses" the wall before reversing — feels
+      // more physical than bouncing the center point.
+      if (c.x - r < ax)               { c.x = ax + r;               c.vx = Math.abs(c.vx); }
+      if (c.x + r > ax + ARENA_SIZE)  { c.x = ax + ARENA_SIZE - r;  c.vx = -Math.abs(c.vx); }
+      if (c.y - r < ay)               { c.y = ay + r;               c.vy = Math.abs(c.vy); }
+      if (c.y + r > ay + ARENA_SIZE)  { c.y = ay + ARENA_SIZE - r;  c.vy = -Math.abs(c.vy); }
+
+      // hover detection: cursor ring overlaps the circle
+      const dist = Math.hypot(rx - c.x, ry - c.y);
+      const hovering = dist < RING_R + r && rawX >= 0;
+      if (hovering) {
+        // award based on depth so catching them far away (small) is harder + worth more
+        const points = 1 + Math.floor((1 - c.z) * 4); // up to +5 when far, +1 when close
+        score += points;
+        popAt(c.x, c.y, r, points);
+        circles.splice(i, 1);
+        continue;
+      }
+
+      // reached max depth (it "hit you") => game over
+      if (c.z >= 1) {
+        gameOver();
+        break;
+      }
+    }
+  }
+
+  // update pop particles
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const p = pops[i];
+    if (p.text) {
+      p.y += p.vy * dt;
+      p.life -= 0.025 * dt;
+    } else if (p.ring) {
+      p.r += dt * 1.4;
+      p.life -= 0.035 * dt;
+    } else {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= Math.pow(0.92, dt);
+      p.vy *= Math.pow(0.92, dt);
+      p.life -= 0.04 * dt;
+    }
+    if (p.life <= 0) pops.splice(i, 1);
+  }
+
+  if (mode === 'playing') {
+    const elapsed = now - tStart;
+    if (now - tLastSpawn > spawnInterval(elapsed)) {
+      spawn(elapsed);
+      tLastSpawn = now;
+    }
+  }
+
+  if (mode === 'countdown' && now - tCountdown >= 3000) {
+    mode = 'playing';
+    tStart = now;
+    tLastSpawn = now;
+  }
+
+  // --- render ---
+  drawBackground(now);
+
+  text('BEST', ax + ARENA_SIZE / 2, ay - 44, 11, DIM, 400);
+  text(String(best), ax + ARENA_SIZE / 2, ay - 16, 28, FG, 800);
+
+  // arena interior — frosted-glass effect
+  const blurMargin = 40;
+  const sx = ax - blurMargin, sy = ay - blurMargin;
+  const sw = ARENA_SIZE + blurMargin * 2, sh = ARENA_SIZE + blurMargin * 2;
+  bctx.clearRect(0, 0, sw, sh);
+  bctx.drawImage(canvas, sx * DPR, sy * DPR, sw * DPR, sh * DPR, 0, 0, sw, sh);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+  ctx.clip();
+  ctx.filter = 'blur(18px)';
+  ctx.drawImage(blurCanvas, 0, 0, sw * DPR, sh * DPR, sx, sy, sw, sh);
+  ctx.filter = 'none';
+  ctx.fillStyle = 'rgba(20,20,23,0.45)';
+  ctx.fillRect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+  ctx.restore();
+
+  // arena border (flashes red on game over briefly)
+  const flashing = now < flashUntil;
+  ctx.strokeStyle = flashing ? '#e85d4a' : FG;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+
+  const mx = ax + ARENA_SIZE / 2, my = ay + ARENA_SIZE / 2;
+
+  if (mode === 'idle') {
+    text('ENTER THE SQUARE', mx, my + 4, 13, DIM, 600);
+  }
+
+  if (mode === 'countdown') {
+    const elapsed = now - tCountdown;
+    if (elapsed < 3000) {
+      text(Math.ceil((3000 - elapsed) / 1000), mx, my + 14, 80);
+      text('CLICK TO SKIP', mx, my + 56, 11, DIM, 400);
+    }
+  }
+
+  if (mode === 'playing') {
+    text(score, mx, my + 40, 120, 'rgba(232,232,230,0.06)');
+  }
+
+  // draw circles (clip to arena so they only render inside the square)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+  ctx.clip();
+
+  // sort by z so closer ones overlap farther ones
+  const sortedCircles = circles.slice().sort((a, b) => a.z - b.z);
+  for (const c of sortedCircles) {
+    const ez = c.z * c.z;
+    const r = MIN_R + (MAX_R - MIN_R) * ez;
+
+    // depth-based shading: far = dim/blue-ish, close = bright/warm-ish
+    // we tint with a neutral gray-white scheme to keep arena clean
+    const nearGlow = 0.35 + c.z * 0.65;
+    const farAlpha = 0.55 + c.z * 0.45;
+
+    // soft outer halo (only meaningful when z is moderate+)
+    if (c.z > 0.15) {
+      const halo = ctx.createRadialGradient(c.x, c.y, r * 0.4, c.x, c.y, r * 2.2);
+      halo.addColorStop(0, `rgba(255,255,255,${0.12 * nearGlow})`);
+      halo.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // body: radial gradient with offset highlight to imply a sphere
+    const body = ctx.createRadialGradient(
+      c.x - r * 0.35, c.y - r * 0.35, r * 0.05,
+      c.x, c.y, r
+    );
+    body.addColorStop(0,   `rgba(255,255,255,${farAlpha})`);
+    body.addColorStop(0.55, `rgba(232,232,230,${farAlpha * 0.95})`);
+    body.addColorStop(1,   `rgba(120,120,128,${farAlpha * 0.85})`);
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // when very close, add a faint ring outline so it reads as urgent
+    if (c.z > 0.7) {
+      const urgency = (c.z - 0.7) / 0.3;
+      ctx.strokeStyle = `rgba(232,93,74,${urgency * 0.6})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // pop particles (drawn inside arena clip too, but rings can extend a little)
+  for (const p of pops) {
+    if (p.text) {
+      const a = Math.max(0, p.life);
+      ctx.fillStyle = cursorRgba(a);
+      ctx.font = `800 12px "Archivo Black", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(p.text, p.x, p.y);
+    } else if (p.ring) {
+      ctx.strokeStyle = cursorRgba(Math.max(0, p.life) * 0.7);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = cursorRgba(Math.max(0, p.life));
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.restore(); // end arena clip
+
+  if (mode === 'dead') {
+    text('GAME OVER', mx, my - 14, 32);
+    text(String(score), mx, my + 18, 18, FG, 600);
+    text('CLICK TO RETRY', mx, my + 46, 11, DIM, 400);
+  }
+
+  // --- cursor layer ---
+  cctx.clearRect(0, 0, W, H);
+  if (rx >= 0) {
+    cctx.strokeStyle = cursorColor;
+    cctx.lineWidth = 1.5;
+    cctx.beginPath();
+    cctx.arc(rx, ry, RING_R * hoverScale, 0, Math.PI * 2);
+    cctx.stroke();
+  }
+  if (dx_ >= 0) {
+    cctx.fillStyle = cursorColor;
+    cctx.beginPath();
+    cctx.arc(dx_, dy_, DOT_R * hoverScale, 0, Math.PI * 2);
+    cctx.fill();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

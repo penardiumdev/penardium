@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Arena Dribbler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; overflow: hidden; background: #1a1a1d; font-family: "Archivo Black", sans-serif; cursor: none; }
+  *, *::before, *::after { cursor: none !important; }
+  canvas { display: block; position: fixed; inset: 0; }
+  canvas#arena { cursor: none; }
+  canvas#cursorLayer { pointer-events: none; z-index: 20; }
+  .palette {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    font-family: "Archivo Black", sans-serif;
+  }
+  .palette-btn {
+    background: transparent;
+    border: 1.5px solid #3d3d40;
+    color: #6b6b68;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    padding: 6px 10px;
+    cursor: none;
+    transition: color 0.15s, border-color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .palette-btn:hover, .palette-btn.hover {
+    color: #e8e8e6;
+    border-color: #e8e8e6;
+  }
+  .palette-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #e8e8e6;
+  }
+  .palette-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: #1a1a1d;
+    border: 1.5px solid #3d3d40;
+    padding: 8px;
+    display: none;
+    grid-template-columns: repeat(7, auto);
+    gap: 6px;
+  }
+  .palette-menu.open { display: grid; }
+  .palette-option {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    cursor: none;
+    border: 1.5px solid transparent;
+    transition: border-color 0.15s, transform 0.15s;
+    padding: 0;
+  }
+  .palette-option:hover, .palette-option.hover {
+    transform: scale(1.15);
+  }
+  .palette-option.selected {
+    border-color: #e8e8e6;
+  }
+</style>
+</head>
+<body>
+<div class="palette">
+  <button class="palette-btn" id="paletteBtn">
+    <span class="palette-swatch" id="paletteSwatch"></span>
+    <span>CURSOR</span>
+  </button>
+  <div class="palette-menu" id="paletteMenu"></div>
+</div>
+<canvas id="arena"></canvas>
+<canvas id="cursorLayer"></canvas>
+<script src="nav.js"></script>
+<script>
+const canvas = document.getElementById('arena');
+const ctx = canvas.getContext('2d');
+const cursorCanvas = document.getElementById('cursorLayer');
+const cctx = cursorCanvas.getContext('2d');
+
+// offscreen canvas used for the frosted-glass blur over the arena interior
+const blurCanvas = document.createElement('canvas');
+const bctx = blurCanvas.getContext('2d');
+
+// --- config ---
+const ARENA_SIZE = 300;
+const DOT_R = 4;
+const RING_R = 18;
+const DOT_EASE = 0.22;
+const RING_EASE = 0.16;
+const BG = '#1a1a1d', FG = '#e8e8e6', DIM = '#6b6b68';
+
+// --- cursor color palette (shared across all 3 arenas via localStorage) ---
+const PALETTE = [
+  { name: 'DEFAULT', value: '#e8e8e6' },
+  { name: 'RED',     value: '#e85d4a' },
+  { name: 'AMBER',   value: '#e8a64a' },
+  { name: 'LIME',    value: '#a8e84a' },
+  { name: 'MINT',    value: '#4ae8b4' },
+  { name: 'BLUE',    value: '#4aa6e8' },
+  { name: 'VIOLET',  value: '#b44ae8' },
+];
+let cursorColor = localStorage.getItem('arenaCursorColor') || PALETTE[0].value;
+
+const BALL_R = 9;
+const GRAVITY = 0.045;          // per (1/144)s frame at dt=1
+const AIR_DRAG = 0.0015;        // per frame
+const WALL_BOUNCE = 0.78;       // energy retained on wall hit
+const KICK_BASE_UP = 3.8;       // baseline upward impulse on every kick
+const KICK_VEL_GAIN = 0.4;      // how much cursor velocity transfers
+const KICK_MAX_SPEED = 16;      // cap so frantic flicks don't yeet the ball
+const KICK_COOLDOWN_MS = 120;   // refractory period before ring can kick again
+const SPIN_FROM_VEL = 0.012;
+
+// --- animated background blobs ---
+const BG_BLOBS = [
+  { color: '88,60,140',  baseR: 520, ax: 0.32, ay: 0.45, kx: 0.000045, ky: 0.000033, phaseX: 0.0, phaseY: 1.7, alpha: 0.55 },
+  { color: '180,74,232', baseR: 460, ax: 0.28, ay: 0.40, kx: 0.000058, ky: 0.000041, phaseX: 2.1, phaseY: 0.4, alpha: 0.40 },
+  { color: '74,166,232', baseR: 580, ax: 0.36, ay: 0.50, kx: 0.000034, ky: 0.000049, phaseX: 4.3, phaseY: 2.9, alpha: 0.45 },
+  { color: '232,93,74',  baseR: 420, ax: 0.30, ay: 0.42, kx: 0.000052, ky: 0.000028, phaseX: 5.6, phaseY: 4.1, alpha: 0.30 },
+];
+
+// --- state ---
+let W, H, ax, ay, DPR = 1;
+let rawX = -1, rawY = -1;
+let dx_ = -1, dy_ = -1;          // inner dot (smoothed)
+let rx = -1, ry = -1;            // outer ring (kicker)
+let prevRx = -1, prevRy = -1;    // for cursor velocity
+let cursorVx = 0, cursorVy = 0;
+let mode = 'idle';
+let tCountdown = 0, tStart = 0, tLastKick = -9999;
+let ball = null;
+let score = 0;                   // current kick count
+let best = parseInt(localStorage.getItem('arenaDribblerBest')) || 0;
+let cursorTrail = [];
+let lastFrameTime = 0;
+let hoverScale = 1;
+let hoverTarget = 1;
+let kickPulse = 0;               // 0..1, fades after a kick
+let particles = [];
+let ballRotation = 0;
+let ballSpin = 0;
+
+function resize() {
+  DPR = devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  cursorCanvas.style.width = W + 'px';
+  cursorCanvas.style.height = H + 'px';
+  cursorCanvas.width = W * DPR;
+  cursorCanvas.height = H * DPR;
+  cctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // blur canvas sized to the arena region (with margin so blur edges don't clip)
+  const blurMargin = 40;
+  blurCanvas.width = (ARENA_SIZE + blurMargin * 2) * DPR;
+  blurCanvas.height = (ARENA_SIZE + blurMargin * 2) * DPR;
+  bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ax = (W - ARENA_SIZE) / 2;
+  ay = (H - ARENA_SIZE) / 2;
+}
+addEventListener('resize', resize);
+resize();
+
+window.addEventListener('mousemove', e => {
+  rawX = e.clientX; rawY = e.clientY;
+  if (dx_ < 0) { dx_ = rawX; dy_ = rawY; rx = rawX; ry = rawY; prevRx = rawX; prevRy = rawY; }
+});
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// --- palette menu setup ---
+const paletteBtn = document.getElementById('paletteBtn');
+const paletteMenu = document.getElementById('paletteMenu');
+const paletteSwatch = document.getElementById('paletteSwatch');
+let paletteOpen = false;
+
+PALETTE.forEach(p => {
+  const opt = document.createElement('button');
+  opt.className = 'palette-option';
+  opt.style.background = p.value;
+  opt.dataset.color = p.value;
+  opt.title = p.name;
+  if (p.value === cursorColor) opt.classList.add('selected');
+  opt.addEventListener('click', (e) => {
+    e.stopPropagation();
+    cursorColor = p.value;
+    localStorage.setItem('arenaCursorColor', cursorColor);
+    paletteSwatch.style.background = cursorColor;
+    [...paletteMenu.children].forEach(c => c.classList.toggle('selected', c.dataset.color === cursorColor));
+    paletteMenu.classList.remove('open');
+    paletteOpen = false;
+    refreshPaletteRects();
+  });
+  paletteMenu.appendChild(opt);
+});
+paletteSwatch.style.background = cursorColor;
+
+paletteBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  paletteOpen = !paletteOpen;
+  paletteMenu.classList.toggle('open', paletteOpen);
+  refreshPaletteRects();
+});
+addEventListener('click', () => {
+  if (paletteOpen) {
+    paletteOpen = false;
+    paletteMenu.classList.remove('open');
+    refreshPaletteRects();
+  }
+});
+
+let paletteBtnRect = paletteBtn.getBoundingClientRect();
+let paletteOptionRects = [];
+const refreshPaletteRects = () => {
+  paletteBtnRect = paletteBtn.getBoundingClientRect();
+  paletteOptionRects = [...paletteMenu.children].map(el => ({
+    el, rect: el.getBoundingClientRect()
+  }));
+};
+addEventListener('resize', refreshPaletteRects);
+refreshPaletteRects();
+
+window.addEventListener('mousemove', e => {
+  const navHover = window.GameNav.updateHover(e.clientX, e.clientY);
+  hoverTarget = navHover ? 1.4 : 1;
+});
+
+canvas.addEventListener('click', (e) => {
+  // palette UI swallows clicks too
+  if (e.clientX >= paletteBtnRect.left && e.clientX <= paletteBtnRect.right
+   && e.clientY >= paletteBtnRect.top && e.clientY <= paletteBtnRect.bottom) return;
+  if (paletteOpen) {
+    for (const { rect } of paletteOptionRects) {
+      if (e.clientX >= rect.left && e.clientX <= rect.right
+       && e.clientY >= rect.top && e.clientY <= rect.bottom) return;
+    }
+  }
+  // nav swallows clicks (and navigates if a menu item was clicked)
+  if (window.GameNav.handleClick(e.clientX, e.clientY)) return;
+  if (mode === 'countdown' && inArena()) {
+    startGame();
+  } else if (mode === 'dead') {
+    mode = 'idle';
+    score = 0;
+    ball = null;
+    particles = [];
+    cursorTrail = [];
+    kickPulse = 0;
+  }
+});
+
+const inArena = () => rx >= ax && rx <= ax + ARENA_SIZE && ry >= ay && ry <= ay + ARENA_SIZE;
+
+function startGame() {
+  mode = 'playing';
+  tStart = performance.now();
+  score = 0;
+  // spawn ball at top-center, slight horizontal nudge so it's not boring
+  ball = {
+    x: ax + ARENA_SIZE / 2 + (Math.random() - 0.5) * 60,
+    y: ay + 40,
+    vx: (Math.random() - 0.5) * 1.5,
+    vy: 0,
+  };
+  ballRotation = 0;
+  ballSpin = 0;
+  particles = [];
+}
+
+function gameOver() {
+  mode = 'dead';
+  if (score > best) {
+    best = score;
+    localStorage.setItem('arenaDribblerBest', best);
+  }
+}
+
+function spawnKickParticles(x, y, dirX, dirY) {
+  const count = 8;
+  for (let i = 0; i < count; i++) {
+    const ang = Math.atan2(dirY, dirX) + (Math.random() - 0.5) * 1.6;
+    const sp = 1.5 + Math.random() * 2.5;
+    particles.push({
+      x, y,
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp,
+      life: 1,
+      decay: 0.04 + Math.random() * 0.03,
+    });
+  }
+}
+
+function tryKick(now) {
+  if (!ball) return;
+  if (now - tLastKick < KICK_COOLDOWN_MS) return;
+  const dxb = ball.x - rx, dyb = ball.y - ry;
+  const dist = Math.hypot(dxb, dyb);
+  if (dist > RING_R + BALL_R) return;
+
+  // direction from cursor center to ball — this is the natural push direction
+  const nx = dxb / (dist || 1);
+  const ny = dyb / (dist || 1);
+
+  // cursor speed feeds into kick power
+  const cSpeed = Math.hypot(cursorVx, cursorVy);
+
+  // Impulse: a baseline upward kick + cursor velocity transfer + push along contact normal
+  // Mix the cursor's velocity direction with the contact normal so flicks feel natural
+  // but the ball never tunnels into the ring.
+  const velPart = Math.min(cSpeed, KICK_MAX_SPEED) * KICK_VEL_GAIN;
+  const normalPart = 1.6;
+
+  let kvx = cursorVx * KICK_VEL_GAIN + nx * normalPart;
+  let kvy = cursorVy * KICK_VEL_GAIN + ny * normalPart - KICK_BASE_UP;
+
+  // cap final speed so it never feels broken
+  const kspd = Math.hypot(kvx, kvy);
+  const KMAX = 13;
+  if (kspd > KMAX) { kvx = kvx / kspd * KMAX; kvy = kvy / kspd * KMAX; }
+
+  ball.vx = kvx;
+  ball.vy = kvy;
+
+  // resolve overlap so we're not stuck inside ring
+  const minD = RING_R + BALL_R + 0.5;
+  ball.x = rx + nx * minD;
+  ball.y = ry + ny * minD;
+
+  // spin influenced by cursor's tangential velocity
+  ballSpin = (cursorVx * ny - cursorVy * nx) * SPIN_FROM_VEL;
+
+  tLastKick = now;
+  score += 1;
+  kickPulse = 1;
+  spawnKickParticles(ball.x, ball.y, kvx, kvy);
+}
+
+function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px "Archivo Black", sans-serif`;
+  ctx.textAlign = align;
+  ctx.fillText(str, x, y);
+}
+
+function cursorRgba(alpha) {
+  const h = cursorColor.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function drawBackground(now) {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const b of BG_BLOBS) {
+    const cx = W * 0.5 + Math.sin(now * b.kx + b.phaseX) * W * b.ax;
+    const cy = H * 0.5 + Math.cos(now * b.ky + b.phaseY) * H * b.ay;
+    const r = b.baseR + Math.sin(now * 0.0004 + b.phaseX) * 60;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0,    `rgba(${b.color},${b.alpha})`);
+    grad.addColorStop(0.4,  `rgba(${b.color},${b.alpha * 0.4})`);
+    grad.addColorStop(1,    `rgba(${b.color},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
+
+  const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H) * 0.35, W/2, H/2, Math.max(W,H) * 0.75);
+  vg.addColorStop(0, 'rgba(26,26,29,0)');
+  vg.addColorStop(1, 'rgba(26,26,29,0.85)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawBall(b) {
+  const grad = ctx.createRadialGradient(
+    b.x - BALL_R * 0.4, b.y - BALL_R * 0.5, 0,
+    b.x, b.y, BALL_R
+  );
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.65, 'rgba(232,232,230,1)');
+  grad.addColorStop(1, 'rgba(140,140,140,1)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2);
+  ctx.fill();
+
+  // subtle rotating tick mark to show spin
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(ballRotation);
+  ctx.strokeStyle = 'rgba(80,80,80,0.55)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-BALL_R * 0.6, 0);
+  ctx.lineTo(BALL_R * 0.6, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, -BALL_R * 0.6);
+  ctx.lineTo(0, BALL_R * 0.6);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function frame(now) {
+  const dt = lastFrameTime === 0 ? 1 : Math.min(3, (now - lastFrameTime) / (1000 / 144));
+  lastFrameTime = now;
+
+  if (rawX >= 0 && dx_ >= 0) {
+    const dotK = 1 - Math.pow(1 - DOT_EASE, dt);
+    const ringK = 1 - Math.pow(1 - RING_EASE, dt);
+    prevRx = rx; prevRy = ry;
+    dx_ += (rawX - dx_) * dotK;
+    dy_ += (rawY - dy_) * dotK;
+    rx += (rawX - rx) * ringK;
+    ry += (rawY - ry) * ringK;
+    // cursor velocity in px per (1/144)s frame
+    if (dt > 0) {
+      cursorVx = (rx - prevRx) / dt;
+      cursorVy = (ry - prevRy) / dt;
+    }
+  }
+
+  const scaleK = 1 - Math.pow(1 - 0.25, dt);
+  hoverScale += (hoverTarget - hoverScale) * scaleK;
+  kickPulse *= Math.pow(0.88, dt);
+
+  if (mode === 'idle' && inArena()) { mode = 'countdown'; tCountdown = now; }
+  if (mode === 'countdown' && !inArena()) mode = 'idle';
+  if (mode === 'playing' && !inArena()) gameOver();
+
+  // ball physics
+  if (mode === 'playing' && ball) {
+    ball.vy += GRAVITY * dt;
+    // air drag (mild, scales with velocity)
+    ball.vx -= ball.vx * AIR_DRAG * dt;
+    ball.vy -= ball.vy * AIR_DRAG * dt;
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    ballRotation += ballSpin * dt;
+    ballSpin *= Math.pow(0.99, dt);
+
+    // walls: left/right/top bounce
+    if (ball.x - BALL_R < ax) {
+      ball.x = ax + BALL_R;
+      ball.vx = -ball.vx * WALL_BOUNCE;
+    } else if (ball.x + BALL_R > ax + ARENA_SIZE) {
+      ball.x = ax + ARENA_SIZE - BALL_R;
+      ball.vx = -ball.vx * WALL_BOUNCE;
+    }
+    if (ball.y - BALL_R < ay) {
+      ball.y = ay + BALL_R;
+      ball.vy = -ball.vy * WALL_BOUNCE;
+    }
+
+    // floor = death
+    if (ball.y + BALL_R >= ay + ARENA_SIZE) {
+      ball.y = ay + ARENA_SIZE - BALL_R;
+      gameOver();
+    }
+
+    // kick check
+    tryKick(now);
+  }
+
+  // particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 0.05 * dt;
+    p.life -= p.decay * dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // cursor trail (always on while playing)
+  if (mode === 'playing' && dx_ >= 0) {
+    cursorTrail.push({ x: dx_, y: dy_ });
+    if (cursorTrail.length > 14) cursorTrail.shift();
+  } else if (mode !== 'playing' && cursorTrail.length) {
+    cursorTrail = [];
+  }
+
+  if (mode === 'countdown' && now - tCountdown >= 3000) {
+    startGame();
+  }
+
+  // --- render ---
+  drawBackground(now);
+
+  text('BEST', ax + ARENA_SIZE / 2, ay - 44, 11, DIM, 400);
+  text(String(best), ax + ARENA_SIZE / 2, ay - 16, 28, FG, 800);
+
+  // arena interior — frosted-glass effect
+  const blurMargin = 40;
+  const sx = ax - blurMargin, sy = ay - blurMargin;
+  const sw = ARENA_SIZE + blurMargin * 2, sh = ARENA_SIZE + blurMargin * 2;
+  bctx.clearRect(0, 0, sw, sh);
+  bctx.drawImage(canvas, sx * DPR, sy * DPR, sw * DPR, sh * DPR, 0, 0, sw, sh);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+  ctx.clip();
+  ctx.filter = 'blur(18px)';
+  ctx.drawImage(blurCanvas, 0, 0, sw * DPR, sh * DPR, sx, sy, sw, sh);
+  ctx.filter = 'none';
+  ctx.fillStyle = 'rgba(20,20,23,0.45)';
+  ctx.fillRect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+  ctx.restore();
+
+  ctx.strokeStyle = FG;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+
+  const mx = ax + ARENA_SIZE / 2, my = ay + ARENA_SIZE / 2;
+
+  if (mode === 'idle') {
+    text('ENTER THE SQUARE', mx, my + 4, 13, DIM, 600);
+    text('KEEP THE BALL UP', mx, my + 24, 11, DIM, 400);
+  }
+
+  if (mode === 'countdown') {
+    const elapsed = now - tCountdown;
+    if (elapsed < 3000) {
+      text(Math.ceil((3000 - elapsed) / 1000), mx, my + 14, 80);
+      text('CLICK TO SKIP', mx, my + 56, 11, DIM, 400);
+    }
+  }
+
+  if (mode === 'playing') {
+    text(score, mx, my + 40, 120, 'rgba(232,232,230,0.06)');
+  }
+
+  // ball
+  if (ball && (mode === 'playing' || mode === 'dead')) {
+    drawBall(ball);
+  }
+
+  // particles
+  for (const p of particles) {
+    const a = Math.max(0, p.life);
+    ctx.fillStyle = cursorRgba(a);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (mode === 'dead') {
+    text('GAME OVER', mx, my - 14, 32);
+    text(String(score) + '  KICKS', mx, my + 18, 13, FG, 600);
+    text('CLICK TO RETRY', mx, my + 46, 11, DIM, 400);
+  }
+
+  // --- cursor layer (rendered on top of all DOM UI) ---
+  cctx.clearRect(0, 0, W, H);
+  // cursor: ring + inner dot
+  if (rx >= 0) {
+    const pulseR = RING_R * hoverScale + kickPulse * 8;
+    cctx.strokeStyle = cursorRgba(1 - kickPulse * 0.4);
+    cctx.lineWidth = 1.5;
+    cctx.beginPath();
+    cctx.arc(rx, ry, pulseR, 0, Math.PI * 2);
+    cctx.stroke();
+
+    // expanding shockwave on kick
+    if (kickPulse > 0.05) {
+      cctx.strokeStyle = cursorRgba(kickPulse * 0.5);
+      cctx.lineWidth = 1;
+      cctx.beginPath();
+      cctx.arc(rx, ry, RING_R + (1 - kickPulse) * 28, 0, Math.PI * 2);
+      cctx.stroke();
+    }
+  }
+
+  // cursor trail
+  if (cursorTrail.length >= 2) {
+    for (let i = 1; i < cursorTrail.length; i++) {
+      const a = (i / cursorTrail.length) * 0.45;
+      cctx.strokeStyle = cursorRgba(a);
+      cctx.lineWidth = DOT_R * (i / cursorTrail.length) * 1.3;
+      cctx.lineCap = 'round';
+      cctx.beginPath();
+      cctx.moveTo(cursorTrail[i-1].x, cursorTrail[i-1].y);
+      cctx.lineTo(cursorTrail[i].x, cursorTrail[i].y);
+      cctx.stroke();
+    }
+  }
+
+  if (dx_ >= 0) {
+    cctx.fillStyle = cursorColor;
+    cctx.beginPath();
+    cctx.arc(dx_, dy_, DOT_R * hoverScale, 0, Math.PI * 2);
+    cctx.fill();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

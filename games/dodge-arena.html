@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Arena Dodger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; overflow: hidden; background: #1a1a1d; font-family: "Archivo Black", sans-serif; cursor: none; }
+  *, *::before, *::after { cursor: none !important; }
+  canvas { display: block; position: fixed; inset: 0; }
+  canvas#arena { cursor: none; }
+  canvas#cursorLayer { pointer-events: none; z-index: 20; }
+  .palette {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    font-family: "Archivo Black", sans-serif;
+  }
+  .palette-btn {
+    background: transparent;
+    border: 1.5px solid #3d3d40;
+    color: #6b6b68;
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+    padding: 6px 10px;
+    cursor: none;
+    transition: color 0.15s, border-color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .palette-btn:hover, .palette-btn.hover {
+    color: #e8e8e6;
+    border-color: #e8e8e6;
+  }
+  .palette-swatch {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #e8e8e6;
+  }
+  .palette-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: #1a1a1d;
+    border: 1.5px solid #3d3d40;
+    padding: 8px;
+    display: none;
+    grid-template-columns: repeat(7, auto);
+    gap: 6px;
+  }
+  .palette-menu.open { display: grid; }
+  .palette-option {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    cursor: none;
+    border: 1.5px solid transparent;
+    transition: border-color 0.15s, transform 0.15s;
+    padding: 0;
+  }
+  .palette-option:hover, .palette-option.hover {
+    transform: scale(1.15);
+  }
+  .palette-option.selected {
+    border-color: #e8e8e6;
+  }
+</style>
+</head>
+<body>
+<div class="palette">
+  <button class="palette-btn" id="paletteBtn">
+    <span class="palette-swatch" id="paletteSwatch"></span>
+    <span>CURSOR</span>
+  </button>
+  <div class="palette-menu" id="paletteMenu"></div>
+</div>
+<canvas id="arena"></canvas>
+<canvas id="cursorLayer"></canvas>
+<script src="nav.js"></script>
+<script>
+const canvas = document.getElementById('arena');
+const ctx = canvas.getContext('2d');
+const cursorCanvas = document.getElementById('cursorLayer');
+const cctx = cursorCanvas.getContext('2d');
+
+// offscreen canvas used for the frosted-glass blur over the arena interior
+const blurCanvas = document.createElement('canvas');
+const bctx = blurCanvas.getContext('2d');
+
+// --- config ---
+const ARENA_SIZE = 300;
+const DOT_R = 4;
+const RING_R = 18;            // ring IS the hitbox
+const SPAWN_MARGIN = 420;
+const DOT_EASE = 0.22;
+const RING_EASE = 0.16;
+const BG = '#1a1a1d', FG = '#e8e8e6', DIM = '#6b6b68';
+
+// --- cursor color palette (shared across all 3 arenas via localStorage) ---
+const PALETTE = [
+  { name: 'DEFAULT', value: '#e8e8e6' },
+  { name: 'RED',     value: '#e85d4a' },
+  { name: 'AMBER',   value: '#e8a64a' },
+  { name: 'LIME',    value: '#a8e84a' },
+  { name: 'MINT',    value: '#4ae8b4' },
+  { name: 'BLUE',    value: '#4aa6e8' },
+  { name: 'VIOLET',  value: '#b44ae8' },
+];
+let cursorColor = localStorage.getItem('arenaCursorColor') || PALETTE[0].value;
+
+const START_INTERVAL = 900;
+const MIN_INTERVAL = 220;
+const DENSITY_RAMP_MS = 30000;
+const SPEED_RAMP_START_MS = DENSITY_RAMP_MS;
+const BASE_SPEED = 1.4;
+const SPEED_PER_SEC = 0.12;
+
+// --- animated background blobs ---
+// Each blob drifts on its own sine-wave path. Colors are muted to keep the
+// dark base #1a1a1d dominant; the arena border + cursor stay crisp on top.
+const BG_BLOBS = [
+  { color: '88,60,140',  baseR: 520, ax: 0.32, ay: 0.45, kx: 0.000045, ky: 0.000033, phaseX: 0.0, phaseY: 1.7, alpha: 0.55 },
+  { color: '180,74,232', baseR: 460, ax: 0.28, ay: 0.40, kx: 0.000058, ky: 0.000041, phaseX: 2.1, phaseY: 0.4, alpha: 0.40 },
+  { color: '74,166,232', baseR: 580, ax: 0.36, ay: 0.50, kx: 0.000034, ky: 0.000049, phaseX: 4.3, phaseY: 2.9, alpha: 0.45 },
+  { color: '232,93,74',  baseR: 420, ax: 0.30, ay: 0.42, kx: 0.000052, ky: 0.000028, phaseX: 5.6, phaseY: 4.1, alpha: 0.30 },
+];
+
+// --- state ---
+let W, H, ax, ay, DPR = 1;
+let rawX = -1, rawY = -1;
+let dx_ = -1, dy_ = -1;        // inner dot
+let rx = -1, ry = -1;          // outer ring (hitbox)
+let mode = 'idle';
+let tCountdown = 0, tStart = 0, tLastSpawn = 0;
+let projectiles = [];
+let score = 0;
+let best = parseInt(localStorage.getItem('arenaDodgerBest')) || 0;
+let mouseDown = false;
+let ringBroken = false;
+let ringShards = [];
+let cursorTrail = [];
+let lastFrameTime = 0;
+let hoverScale = 1;
+let hoverTarget = 1;
+
+function resize() {
+  DPR = devicePixelRatio || 1;
+  W = innerWidth; H = innerHeight;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  cursorCanvas.style.width = W + 'px';
+  cursorCanvas.style.height = H + 'px';
+  cursorCanvas.width = W * DPR;
+  cursorCanvas.height = H * DPR;
+  cctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // blur canvas sized to the arena region (with margin so blur edges don't clip)
+  const blurMargin = 40;
+  blurCanvas.width = (ARENA_SIZE + blurMargin * 2) * DPR;
+  blurCanvas.height = (ARENA_SIZE + blurMargin * 2) * DPR;
+  bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ax = (W - ARENA_SIZE) / 2;
+  ay = (H - ARENA_SIZE) / 2;
+}
+addEventListener('resize', resize);
+resize();
+
+window.addEventListener('mousemove', e => {
+  rawX = e.clientX; rawY = e.clientY;
+  if (dx_ < 0) { dx_ = rawX; dy_ = rawY; rx = rawX; ry = rawY; }
+});
+canvas.addEventListener('mousedown', () => { mouseDown = true; });
+addEventListener('mouseup', () => { mouseDown = false; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// --- palette menu setup ---
+const paletteBtn = document.getElementById('paletteBtn');
+const paletteMenu = document.getElementById('paletteMenu');
+const paletteSwatch = document.getElementById('paletteSwatch');
+let paletteOpen = false;
+
+PALETTE.forEach(p => {
+  const opt = document.createElement('button');
+  opt.className = 'palette-option';
+  opt.style.background = p.value;
+  opt.dataset.color = p.value;
+  opt.title = p.name;
+  if (p.value === cursorColor) opt.classList.add('selected');
+  opt.addEventListener('click', (e) => {
+    e.stopPropagation();
+    cursorColor = p.value;
+    localStorage.setItem('arenaCursorColor', cursorColor);
+    paletteSwatch.style.background = cursorColor;
+    [...paletteMenu.children].forEach(c => c.classList.toggle('selected', c.dataset.color === cursorColor));
+    paletteMenu.classList.remove('open');
+    paletteOpen = false;
+    refreshPaletteRects();
+  });
+  paletteMenu.appendChild(opt);
+});
+paletteSwatch.style.background = cursorColor;
+
+paletteBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  paletteOpen = !paletteOpen;
+  paletteMenu.classList.toggle('open', paletteOpen);
+  refreshPaletteRects();
+});
+addEventListener('click', () => {
+  if (paletteOpen) {
+    paletteOpen = false;
+    paletteMenu.classList.remove('open');
+    refreshPaletteRects();
+  }
+});
+
+let paletteBtnRect = paletteBtn.getBoundingClientRect();
+let paletteOptionRects = [];
+const refreshPaletteRects = () => {
+  paletteBtnRect = paletteBtn.getBoundingClientRect();
+  paletteOptionRects = [...paletteMenu.children].map(el => ({
+    el, rect: el.getBoundingClientRect()
+  }));
+};
+addEventListener('resize', refreshPaletteRects);
+refreshPaletteRects();
+
+window.addEventListener('mousemove', e => {
+  const navHover = window.GameNav.updateHover(e.clientX, e.clientY);
+  hoverTarget = navHover ? 1.4 : 1;
+});
+canvas.addEventListener('click', (e) => {
+  // palette UI swallows clicks too
+  if (e.clientX >= paletteBtnRect.left && e.clientX <= paletteBtnRect.right
+   && e.clientY >= paletteBtnRect.top && e.clientY <= paletteBtnRect.bottom) return;
+  if (paletteOpen) {
+    for (const { rect } of paletteOptionRects) {
+      if (e.clientX >= rect.left && e.clientX <= rect.right
+       && e.clientY >= rect.top && e.clientY <= rect.bottom) return;
+    }
+  }
+  // nav swallows clicks (and navigates if a menu item was clicked)
+  if (window.GameNav.handleClick(e.clientX, e.clientY)) return;
+  if (mode === 'countdown' && inArena()) {
+    mode = 'playing';
+    tStart = performance.now();
+    tLastSpawn = tStart;
+  } else if (mode === 'dead') {
+    projectiles = []; score = 0; mode = 'idle';
+    ringBroken = false; ringShards = []; cursorTrail = [];
+    lastFrameTime = 0;
+  }
+});
+
+const inArena = () => rx >= ax && rx <= ax + ARENA_SIZE && ry >= ay && ry <= ay + ARENA_SIZE;
+
+function breakRing() {
+  ringBroken = true;
+  // scatter current projectiles outward from cursor position
+  const cullDist = SPAWN_MARGIN + 100;
+  const minX = ax - cullDist, maxX = ax + ARENA_SIZE + cullDist;
+  const minY = ay - cullDist, maxY = ay + ARENA_SIZE + cullDist;
+  for (const p of projectiles) {
+    const dxv = p.x - rx, dyv = p.y - ry;
+    const len = Math.hypot(dxv, dyv) || 1;
+    const speed = Math.hypot(p.vx, p.vy);
+    p.vx = dxv / len * speed;
+    p.vy = dyv / len * speed;
+    // restart preview from current scatter point
+    p.startX = p.x;
+    p.startY = p.y;
+    const tX = p.vx > 0 ? (maxX - p.x) / p.vx : p.vx < 0 ? (minX - p.x) / p.vx : Infinity;
+    const tY = p.vy > 0 ? (maxY - p.y) / p.vy : p.vy < 0 ? (minY - p.y) / p.vy : Infinity;
+    const tExit = Math.min(tX, tY);
+    p.exitX = p.x + p.vx * tExit;
+    p.exitY = p.y + p.vy * tExit;
+  }
+  // spawn ring shards
+  ringShards = [];
+  const shardCount = 14;
+  for (let i = 0; i < shardCount; i++) {
+    const ang = (i / shardCount) * Math.PI * 2 + Math.random() * 0.2;
+    const sp = 2 + Math.random() * 2.5;
+    ringShards.push({
+      x: rx + Math.cos(ang) * RING_R,
+      y: ry + Math.sin(ang) * RING_R,
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp,
+      rot: Math.random() * Math.PI * 2,
+      vr: (Math.random() - 0.5) * 0.3,
+      life: 1,
+    });
+  }
+}
+
+function gameOver() {
+  mode = 'dead';
+  if (score > best) {
+    best = score;
+    localStorage.setItem('arenaDodgerBest', best);
+  }
+}
+
+function spawnInterval(elapsed) {
+  const t = Math.min(1, elapsed / DENSITY_RAMP_MS);
+  return START_INTERVAL + (MIN_INTERVAL - START_INTERVAL) * t;
+}
+
+function projectileSpeed(elapsed) {
+  const rampSeconds = Math.max(0, (elapsed - SPEED_RAMP_START_MS) / 1000);
+  return BASE_SPEED + rampSeconds * SPEED_PER_SEC + Math.random() * 0.5;
+}
+
+function spawn(elapsed) {
+  const side = Math.floor(Math.random() * 4);
+  const along = Math.random() * ARENA_SIZE;
+  const positions = [
+    [ax + along, ay - SPAWN_MARGIN],
+    [ax + ARENA_SIZE + SPAWN_MARGIN, ay + along],
+    [ax + along, ay + ARENA_SIZE + SPAWN_MARGIN],
+    [ax - SPAWN_MARGIN, ay + along],
+  ];
+  const [x, y] = positions[side];
+
+  const tx = rx + (Math.random() - 0.5) * 120;
+  const ty = ry + (Math.random() - 0.5) * 120;
+  const vx0 = tx - x, vy0 = ty - y;
+  const len = Math.hypot(vx0, vy0) || 1;
+  const speed = projectileSpeed(elapsed);
+  const vx = vx0 / len * speed, vy = vy0 / len * speed;
+
+  // precompute static exit point for trajectory preview
+  const cull = SPAWN_MARGIN + 100;
+  const minX = ax - cull, maxX = ax + ARENA_SIZE + cull;
+  const minY = ay - cull, maxY = ay + ARENA_SIZE + cull;
+  const tX = vx > 0 ? (maxX - x) / vx : vx < 0 ? (minX - x) / vx : Infinity;
+  const tY = vy > 0 ? (maxY - y) / vy : vy < 0 ? (minY - y) / vy : Infinity;
+  const tExit = Math.min(tX, tY);
+  const exitX = x + vx * tExit, exitY = y + vy * tExit;
+
+  projectiles.push({ x, y, vx, vy, r: 5, startX: x, startY: y, exitX, exitY });
+}
+
+function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px "Archivo Black", sans-serif`;
+  ctx.textAlign = align;
+  ctx.fillText(str, x, y);
+}
+
+function cursorRgba(alpha) {
+  const h = cursorColor.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function drawBackground(now) {
+  // base
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+
+  // blobs use 'lighter' so they additively brighten the base instead of
+  // muddying it. Each blob's center sweeps across the screen via independent
+  // sine waves so the pattern never repeats in a way you can latch onto.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const b of BG_BLOBS) {
+    const cx = W * 0.5 + Math.sin(now * b.kx + b.phaseX) * W * b.ax;
+    const cy = H * 0.5 + Math.cos(now * b.ky + b.phaseY) * H * b.ay;
+    const r = b.baseR + Math.sin(now * 0.0004 + b.phaseX) * 60;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0,    `rgba(${b.color},${b.alpha})`);
+    grad.addColorStop(0.4,  `rgba(${b.color},${b.alpha * 0.4})`);
+    grad.addColorStop(1,    `rgba(${b.color},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
+
+  // subtle vignette to keep edges dark and bring focus inward
+  const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H) * 0.35, W/2, H/2, Math.max(W,H) * 0.75);
+  vg.addColorStop(0, 'rgba(26,26,29,0)');
+  vg.addColorStop(1, 'rgba(26,26,29,0.85)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function frame(now) {
+  // delta-time scaling: 1.0 = 144 FPS baseline (game was tuned at 144Hz). Capped so a paused tab doesn't teleport everything.
+  const dt = lastFrameTime === 0 ? 1 : Math.min(3, (now - lastFrameTime) / (1000 / 144));
+  lastFrameTime = now;
+
+  if (rawX >= 0 && dx_ >= 0) {
+    // exponential easing made frame-rate independent
+    const dotK = 1 - Math.pow(1 - DOT_EASE, dt);
+    const ringK = 1 - Math.pow(1 - RING_EASE, dt);
+    dx_ += (rawX - dx_) * dotK;
+    dy_ += (rawY - dy_) * dotK;
+    rx += (rawX - rx) * ringK;
+    ry += (rawY - ry) * ringK;
+  }
+
+  // smoothly scale cursor toward hover target
+  const scaleK = 1 - Math.pow(1 - 0.25, dt);
+  hoverScale += (hoverTarget - hoverScale) * scaleK;
+
+  if (mode === 'idle' && inArena()) { mode = 'countdown'; tCountdown = now; }
+  if (mode === 'countdown' && !inArena()) mode = 'idle';
+  if (mode === 'playing' && !inArena()) gameOver();
+
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    if (mode === 'playing') {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (!ringBroken) {
+        if (Math.hypot(p.x - rx, p.y - ry) < RING_R + p.r) breakRing();
+      } else {
+        if (Math.hypot(p.x - dx_, p.y - dy_) < DOT_R + p.r) gameOver();
+      }
+    }
+    const cull = SPAWN_MARGIN + 100;
+    if (p.x < ax - cull || p.x > ax + ARENA_SIZE + cull ||
+        p.y < ay - cull || p.y > ay + ARENA_SIZE + cull) {
+      projectiles.splice(i, 1);
+    }
+  }
+
+  // update ring shards
+  for (let i = ringShards.length - 1; i >= 0; i--) {
+    const s = ringShards[i];
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    s.rot += s.vr * dt;
+    s.life -= 0.02 * dt;
+    if (s.life <= 0) ringShards.splice(i, 1);
+  }
+
+  // cursor trail (only when ring is broken & playing)
+  if (ringBroken && mode === 'playing' && dx_ >= 0) {
+    cursorTrail.push({ x: dx_, y: dy_ });
+    if (cursorTrail.length > 16) cursorTrail.shift();
+  } else if (!ringBroken && cursorTrail.length) {
+    cursorTrail = [];
+  }
+
+  if (mode === 'playing') {
+    const elapsed = now - tStart;
+    score = Math.floor(elapsed / 100);
+    if (now - tLastSpawn > spawnInterval(elapsed)) {
+      spawn(elapsed);
+      tLastSpawn = now;
+    }
+  }
+
+  if (mode === 'countdown' && now - tCountdown >= 3000) {
+    mode = 'playing';
+    tStart = now;
+    tLastSpawn = now;
+  }
+
+  // --- render ---
+  drawBackground(now);
+
+  text('BEST', ax + ARENA_SIZE / 2, ay - 44, 11, DIM, 400);
+  text(String(best), ax + ARENA_SIZE / 2, ay - 16, 28, FG, 800);
+
+  // arena interior — frosted-glass effect: copy the bg behind the arena,
+  // blur it, paint it back into the arena rect with a faint darkening tint
+  // so gameplay stays readable but the gradient still breathes through.
+  const blurMargin = 40;
+  const sx = ax - blurMargin, sy = ay - blurMargin;
+  const sw = ARENA_SIZE + blurMargin * 2, sh = ARENA_SIZE + blurMargin * 2;
+  // copy the source region into the offscreen canvas
+  bctx.clearRect(0, 0, sw, sh);
+  bctx.drawImage(canvas, sx * DPR, sy * DPR, sw * DPR, sh * DPR, 0, 0, sw, sh);
+  // draw it back, blurred, clipped to the arena rect
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+  ctx.clip();
+  ctx.filter = 'blur(18px)';
+  ctx.drawImage(blurCanvas, 0, 0, sw * DPR, sh * DPR, sx, sy, sw, sh);
+  ctx.filter = 'none';
+  // subtle darkening overlay for readability
+  ctx.fillStyle = 'rgba(20,20,23,0.45)';
+  ctx.fillRect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+  ctx.restore();
+
+  ctx.strokeStyle = FG;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(ax, ay, ARENA_SIZE, ARENA_SIZE);
+
+  const mx = ax + ARENA_SIZE / 2, my = ay + ARENA_SIZE / 2;
+
+  if (mode === 'idle') {
+    text('ENTER THE SQUARE', mx, my + 4, 13, DIM, 600);
+  }
+
+  if (mode === 'countdown') {
+    const elapsed = now - tCountdown;
+    if (elapsed < 3000) {
+      text(Math.ceil((3000 - elapsed) / 1000), mx, my + 14, 80);
+      text('CLICK TO SKIP', mx, my + 56, 11, DIM, 400);
+    }
+  }
+
+  if (mode === 'playing') {
+    text(score, mx, my + 40, 120, 'rgba(232,232,230,0.06)');
+  }
+
+  // trajectory preview while mouse held
+  if (mode === 'playing' && mouseDown) {
+    for (const p of projectiles) {
+      // hide line once projectile leaves the arena square
+      if (p.x < ax || p.x > ax + ARENA_SIZE || p.y < ay || p.y > ay + ARENA_SIZE) continue;
+      const grad = ctx.createLinearGradient(p.startX, p.startY, p.exitX, p.exitY);
+      grad.addColorStop(0, 'rgba(232,232,230,0.55)');
+      grad.addColorStop(1, 'rgba(232,232,230,0)');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(p.startX, p.startY);
+      ctx.lineTo(p.exitX, p.exitY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // projectiles
+  for (const p of projectiles) {
+    const pdx = Math.max(0, ax - p.x, p.x - (ax + ARENA_SIZE));
+    const pdy = Math.max(0, ay - p.y, p.y - (ay + ARENA_SIZE));
+    const dist = Math.max(pdx, pdy);
+    const alpha = dist === 0 ? 1 : Math.max(0.18, 1 - dist / SPAWN_MARGIN * 0.82);
+
+    const grad = ctx.createRadialGradient(p.x - p.r * 0.4, p.y - p.r * 0.4, 0, p.x, p.y, p.r);
+    grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+    grad.addColorStop(0.7, `rgba(232,232,230,${alpha})`);
+    grad.addColorStop(1, `rgba(160,160,160,${alpha})`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (mode === 'dead') {
+    text('GAME OVER', mx, my - 14, 32);
+    text(String(score), mx, my + 18, 18, FG, 600);
+    text('CLICK TO RETRY', mx, my + 46, 11, DIM, 400);
+  }
+
+  // --- cursor layer (rendered on top of all DOM UI) ---
+  cctx.clearRect(0, 0, W, H);
+  // cursor: ring (hitbox) + inner dot
+  if (rx >= 0 && !ringBroken) {
+    cctx.strokeStyle = cursorColor;
+    cctx.lineWidth = 1.5;
+    cctx.beginPath();
+    cctx.arc(rx, ry, RING_R * hoverScale, 0, Math.PI * 2);
+    cctx.stroke();
+  }
+  // ring shards (break animation)
+  for (const s of ringShards) {
+    cctx.strokeStyle = cursorRgba(Math.max(0, s.life));
+    cctx.lineWidth = 1.5;
+    cctx.beginPath();
+    const len = 6;
+    cctx.moveTo(s.x - Math.cos(s.rot) * len, s.y - Math.sin(s.rot) * len);
+    cctx.lineTo(s.x + Math.cos(s.rot) * len, s.y + Math.sin(s.rot) * len);
+    cctx.stroke();
+  }
+  // cursor trail (when ring is broken)
+  if (cursorTrail.length >= 2) {
+    for (let i = 1; i < cursorTrail.length; i++) {
+      const a = (i / cursorTrail.length) * 0.5;
+      cctx.strokeStyle = cursorRgba(a);
+      cctx.lineWidth = DOT_R * (i / cursorTrail.length) * 1.3;
+      cctx.lineCap = 'round';
+      cctx.beginPath();
+      cctx.moveTo(cursorTrail[i-1].x, cursorTrail[i-1].y);
+      cctx.lineTo(cursorTrail[i].x, cursorTrail[i].y);
+      cctx.stroke();
+    }
+  }
+  if (dx_ >= 0) {
+    cctx.fillStyle = cursorColor;
+    cctx.beginPath();
+    cctx.arc(dx_, dy_, DOT_R * hoverScale, 0, Math.PI * 2);
+    cctx.fill();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
