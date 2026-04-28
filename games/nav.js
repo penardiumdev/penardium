@@ -2,10 +2,10 @@
   // Edit this list to add / remove / rename games. The current page is
   // matched by `match` (last path segment) and excluded from the dropdown.
   const GAMES = [
-    { name: 'ARENA DRIBBLER', href: 'https://penardium.com/dribble-arena.html', match: 'dribble-arena.html' },
-    { name: 'DODGE ARENA',    href: 'https://penardium.com/dodge-arena.html',    match: 'dodge-arena.html' },
-    { name: 'MEMORY ARENA',   href: 'https://penardium.com/memory-arena.html',   match: 'memory-arena.html' },
-    { name: 'APPROACH ARENA', href: 'https://penardium.com/approach-arena.html', match: 'approach-arena.html' },
+    { name: 'ARENA DRIBBLER', href: 'https://penardium.com/games/dribble-arena.html', match: 'games/dribble-arena.html' },
+    { name: 'DODGE ARENA',    href: 'https://penardium.com/games/dodge-arena.html',    match: 'games/dodge-arena.html' },
+    { name: 'MEMORY ARENA',   href: 'https://penardium.com/games/memory-arena.html',   match: 'games/memory-arena.html' },
+    { name: 'APPROACH ARENA', href: 'https://penardium.com/games/approach-arena.html', match: 'games/approach-arena.html' },
   ];
 
   const styles = `
