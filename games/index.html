@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Penardium Games</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet">
+<style>
+  html, body {
+    margin: 0;
+    overflow: hidden;
+    background: #1a1a1d;
+    font-family: "Archivo Black", sans-serif;
+    cursor: none;
+  }
+  *, *::before, *::after { cursor: none !important; }
+  #bg { position: fixed; inset: 0; z-index: 0; display: block; }
+  .game-frame {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 1;
+    transition: opacity 350ms ease;
+  }
+  .game-frame.active {
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 2;
+  }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<iframe class="game-frame active" id="game-a" allowtransparency="true" allow="autoplay"></iframe>
+<iframe class="game-frame" id="game-b" allowtransparency="true" allow="autoplay"></iframe>
+<script src="background.js"></script>
+<script src="sound.js"></script>
+<script>
+(function () {
+  const DEFAULT = 'dribble-arena.html';
+  const VALID = new Set([
+    'dribble-arena.html',
+    'dodge-arena.html',
+    'memory-arena.html',
+    'approach-arena.html',
+  ]);
+
+  function fileFromHash() {
+    const slug = (location.hash || '').replace(/^#/, '');
+    if (!slug) return DEFAULT;
+    const file = slug.endsWith('.html') ? slug : slug + '.html';
+    return VALID.has(file) ? file : DEFAULT;
+  }
+
+  // Two iframes: the new game loads into the inactive one in the background
+  // while the active one stays on screen. Once the new one's `load` event
+  // fires we swap the .active class — CSS transitions the opacities so the
+  // old game fades out as the new one fades in (both arenas are centered
+  // 300px squares, so they overlap perfectly during the crossfade).
+  const frameA = document.getElementById('game-a');
+  const frameB = document.getElementById('game-b');
+  let activeFrame = frameA;
+  let inactiveFrame = frameB;
+  let currentFile = '';
+  const changeListeners = [];
+
+  function emitChange() {
+    for (const cb of changeListeners) {
+      try { cb(currentFile); } catch (e) {}
+    }
+  }
+
+  function navigate(file) {
+    if (!VALID.has(file)) file = DEFAULT;
+    if (file === currentFile) return;
+    const target = inactiveFrame;
+    target.addEventListener('load', function onLoad() {
+      // Promote the now-loaded frame to active in a single tick.
+      activeFrame.classList.remove('active');
+      target.classList.add('active');
+      const old = activeFrame;
+      activeFrame = target;
+      inactiveFrame = old;
+      currentFile = file;
+      try {
+        history.replaceState(null, '', '#' + file.replace(/\.html$/, ''));
+      } catch (e) {}
+      emitChange();
+      // Free the old game so it stops chewing CPU on its raf loop. We
+      // re-use the slot for the next navigation. Wait for the opacity
+      // crossfade to finish first — blanking it mid-fade would flash.
+      setTimeout(() => {
+        if (inactiveFrame === old) old.src = 'about:blank';
+      }, 400);
+    }, { once: true });
+    target.src = file;
+  }
+
+  window.GameShell = {
+    getCurrentFile: () => currentFile,
+    navigate,
+    onChange: (cb) => changeListeners.push(cb),
+    isCrossOrigin: () => {
+      try { void activeFrame.contentWindow.location.href; return false; }
+      catch (e) { return true; }
+    },
+  };
+
+  // Initial load goes straight into the already-active frame — no swap
+  // needed since there's nothing to crossfade from.
+  const initial = fileFromHash();
+  currentFile = initial;
+  activeFrame.addEventListener('load', () => emitChange(), { once: true });
+  activeFrame.src = initial;
+
+  BackgroundFX.start(document.getElementById('bg'));
+
+  // Cross-origin iframes (Chrome on file://) can't share localStorage with
+  // the shell, so the EFFECTS toggle inside the iframe nav posts a message
+  // up to us; we mirror it into the shell's storage so BackgroundFX picks
+  // it up. Same-origin iframes don't need this — they hit shell localStorage
+  // directly via the topNav proxy.
+  addEventListener('message', (e) => {
+    const data = e.data;
+    if (data && data.type === 'gameBg:set') {
+      localStorage.setItem('penardiumBgOff', data.off ? '1' : '0');
+    }
+  });
+
+  addEventListener('hashchange', () => {
+    const f = fileFromHash();
+    if (f !== currentFile) navigate(f);
+  });
+})();
+</script>
+<script src="nav.js"></script>
+</body>
+</html>
