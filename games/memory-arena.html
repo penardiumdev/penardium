@@ -12,79 +12,13 @@
   canvas { display: block; position: fixed; inset: 0; }
   canvas#arena { cursor: none; }
   canvas#cursorLayer { pointer-events: none; z-index: 20; }
-  .palette {
-    position: fixed;
-    top: 16px;
-    right: 16px;
-    z-index: 10;
-    font-family: "Archivo Black", sans-serif;
-  }
-  .palette-btn {
-    background: transparent;
-    border: 1.5px solid #3d3d40;
-    color: #6b6b68;
-    font-family: inherit;
-    font-size: 10px;
-    font-weight: 400;
-    letter-spacing: 0.5px;
-    padding: 6px 10px;
-    cursor: none;
-    transition: color 0.15s, border-color 0.15s;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .palette-btn:hover, .palette-btn.hover {
-    color: #e8e8e6;
-    border-color: #e8e8e6;
-  }
-  .palette-swatch {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #e8e8e6;
-  }
-  .palette-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 6px;
-    background: #1a1a1d;
-    border: 1.5px solid #3d3d40;
-    padding: 8px;
-    display: none;
-    grid-template-columns: repeat(7, auto);
-    gap: 6px;
-  }
-  .palette-menu.open { display: grid; }
-  .palette-option {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    cursor: none;
-    border: 1.5px solid transparent;
-    transition: border-color 0.15s, transform 0.15s;
-    padding: 0;
-  }
-  .palette-option:hover, .palette-option.hover {
-    transform: scale(1.15);
-  }
-  .palette-option.selected {
-    border-color: #e8e8e6;
-  }
 </style>
 </head>
 <body>
-<div class="palette">
-  <button class="palette-btn" id="paletteBtn">
-    <span class="palette-swatch" id="paletteSwatch"></span>
-    <span>CURSOR</span>
-  </button>
-  <div class="palette-menu" id="paletteMenu"></div>
-</div>
 <canvas id="arena"></canvas>
 <canvas id="cursorLayer"></canvas>
 <script src="nav.js"></script>
+<script src="sound.js"></script>
 <script>
 const canvas = document.getElementById('arena');
 const ctx = canvas.getContext('2d');
@@ -101,30 +35,14 @@ const DOT_R = 4;
 const RING_R = 18;
 const BG = '#1a1a1d', FG = '#e8e8e6', DIM = '#6b6b68';
 
-// --- cursor color palette (shared across all 3 arenas via localStorage) ---
-const PALETTE = [
-  { name: 'DEFAULT', value: '#e8e8e6' },
-  { name: 'RED',     value: '#e85d4a' },
-  { name: 'AMBER',   value: '#e8a64a' },
-  { name: 'LIME',    value: '#a8e84a' },
-  { name: 'MINT',    value: '#4ae8b4' },
-  { name: 'BLUE',    value: '#4aa6e8' },
-  { name: 'VIOLET',  value: '#b44ae8' },
-];
-let cursorColor = localStorage.getItem('arenaCursorColor') || PALETTE[0].value;
+// Cursor color is owned by the shared nav (window.GameNav). We re-read it
+// at the top of each frame so swatch changes propagate without a reload.
+let cursorColor = (window.GameNav && window.GameNav.getCursorColor()) || '#e8e8e6';
 
 const NUM_CIRCLES = 7;
 const CIRCLE_R = 18;
 const MIN_SPACING = 50; // center-to-center distance between circles
 const MEMORIZE_MS = 5000;
-
-// --- animated background blobs ---
-const BG_BLOBS = [
-  { color: '88,60,140',  baseR: 520, ax: 0.32, ay: 0.45, kx: 0.000045, ky: 0.000033, phaseX: 0.0, phaseY: 1.7, alpha: 0.55 },
-  { color: '180,74,232', baseR: 460, ax: 0.28, ay: 0.40, kx: 0.000058, ky: 0.000041, phaseX: 2.1, phaseY: 0.4, alpha: 0.40 },
-  { color: '74,166,232', baseR: 580, ax: 0.36, ay: 0.50, kx: 0.000034, ky: 0.000049, phaseX: 4.3, phaseY: 2.9, alpha: 0.45 },
-  { color: '232,93,74',  baseR: 420, ax: 0.30, ay: 0.42, kx: 0.000052, ky: 0.000028, phaseX: 5.6, phaseY: 4.1, alpha: 0.30 },
-];
 
 // --- state ---
 let W, H, ax, ay, DPR = 1;
@@ -192,11 +110,13 @@ function startGame() {
   finalTime = 0;
   mode = 'memorize';
   tMemorizeStart = performance.now();
+  Sound.start();
 }
 
 function gameOver() {
   finalTime = mode === 'recall' ? (performance.now() - tRecallStart) / 1000 : 0;
   mode = 'dead';
+  Sound.fail();
 }
 
 function finish(now) {
@@ -206,19 +126,12 @@ function finish(now) {
     localStorage.setItem('memoryArenaBest', best);
   }
   mode = 'done';
+  Sound.win();
 }
 
 canvas.addEventListener('click', (e) => {
-  // palette UI swallows clicks too
-  if (e.clientX >= paletteBtnRect.left && e.clientX <= paletteBtnRect.right
-   && e.clientY >= paletteBtnRect.top && e.clientY <= paletteBtnRect.bottom) return;
-  if (paletteOpen) {
-    for (const { rect } of paletteOptionRects) {
-      if (e.clientX >= rect.left && e.clientX <= rect.right
-       && e.clientY >= rect.top && e.clientY <= rect.bottom) return;
-    }
-  }
-  // nav swallows clicks (and navigates if a menu item was clicked)
+  // nav swallows clicks (and navigates if a menu item was clicked, or
+  // toggles a setting in the right-side menu)
   if (window.GameNav.handleClick(e.clientX, e.clientY)) return;
   if (mode === 'countdown' && inArena()) {
     startGame();
@@ -230,6 +143,7 @@ canvas.addEventListener('click', (e) => {
       if (c.n < nextNumber) continue; // already cleared
       if (Math.hypot(dx_ - c.x, dy_ - c.y) < CIRCLE_R) {
         if (c.n === nextNumber) {
+          Sound.pop(nextNumber - 1);
           nextNumber++;
           if (nextNumber > NUM_CIRCLES) finish(performance.now());
         } else {
@@ -256,29 +170,11 @@ function text(str, x, y, size, color = FG, weight = 800, align = 'center') {
 }
 
 function drawBackground(now) {
-  ctx.fillStyle = BG;
-  ctx.fillRect(0, 0, W, H);
-
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  for (const b of BG_BLOBS) {
-    const cx = W * 0.5 + Math.sin(now * b.kx + b.phaseX) * W * b.ax;
-    const cy = H * 0.5 + Math.cos(now * b.ky + b.phaseY) * H * b.ay;
-    const r = b.baseR + Math.sin(now * 0.0004 + b.phaseX) * 60;
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-    grad.addColorStop(0,    `rgba(${b.color},${b.alpha})`);
-    grad.addColorStop(0.4,  `rgba(${b.color},${b.alpha * 0.4})`);
-    grad.addColorStop(1,    `rgba(${b.color},0)`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
-  }
-  ctx.restore();
-
-  const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H) * 0.35, W/2, H/2, Math.max(W,H) * 0.75);
-  vg.addColorStop(0, 'rgba(26,26,29,0)');
-  vg.addColorStop(1, 'rgba(26,26,29,0.85)');
-  ctx.fillStyle = vg;
-  ctx.fillRect(0, 0, W, H);
+  // Background blobs + vignette are painted by the shell (index.html) when
+  // this page is loaded inside the iframe; clearing keeps the canvas
+  // transparent so the shell shows through. Standalone visits fall back to
+  // the dark body background.
+  ctx.clearRect(0, 0, W, H);
 }
 
 function formatScore(t) {
@@ -290,58 +186,6 @@ let lastFrameTime = 0;
 let hoverScale = 1;
 let hoverTarget = 1;
 
-// --- palette menu setup ---
-const paletteBtn = document.getElementById('paletteBtn');
-const paletteMenu = document.getElementById('paletteMenu');
-const paletteSwatch = document.getElementById('paletteSwatch');
-let paletteOpen = false;
-
-PALETTE.forEach(p => {
-  const opt = document.createElement('button');
-  opt.className = 'palette-option';
-  opt.style.background = p.value;
-  opt.dataset.color = p.value;
-  opt.title = p.name;
-  if (p.value === cursorColor) opt.classList.add('selected');
-  opt.addEventListener('click', (e) => {
-    e.stopPropagation();
-    cursorColor = p.value;
-    localStorage.setItem('arenaCursorColor', cursorColor);
-    paletteSwatch.style.background = cursorColor;
-    [...paletteMenu.children].forEach(c => c.classList.toggle('selected', c.dataset.color === cursorColor));
-    paletteMenu.classList.remove('open');
-    paletteOpen = false;
-    refreshPaletteRects();
-  });
-  paletteMenu.appendChild(opt);
-});
-paletteSwatch.style.background = cursorColor;
-
-paletteBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  paletteOpen = !paletteOpen;
-  paletteMenu.classList.toggle('open', paletteOpen);
-  refreshPaletteRects();
-});
-addEventListener('click', () => {
-  if (paletteOpen) {
-    paletteOpen = false;
-    paletteMenu.classList.remove('open');
-    refreshPaletteRects();
-  }
-});
-
-let paletteBtnRect = paletteBtn.getBoundingClientRect();
-let paletteOptionRects = [];
-const refreshPaletteRects = () => {
-  paletteBtnRect = paletteBtn.getBoundingClientRect();
-  paletteOptionRects = [...paletteMenu.children].map(el => ({
-    el, rect: el.getBoundingClientRect()
-  }));
-};
-addEventListener('resize', refreshPaletteRects);
-refreshPaletteRects();
-
 window.addEventListener('mousemove', e => {
   const navHover = window.GameNav.updateHover(e.clientX, e.clientY);
   hoverTarget = navHover ? 1.4 : 1;
@@ -350,6 +194,7 @@ window.addEventListener('mousemove', e => {
 function frame(now) {
   const dt = lastFrameTime === 0 ? 1 : Math.min(3, (now - lastFrameTime) / (1000 / 144));
   lastFrameTime = now;
+  cursorColor = (window.GameNav && window.GameNav.getCursorColor()) || cursorColor;
 
   if (rawX >= 0 && dx_ >= 0) {
     // inner dot: 1:1
@@ -443,7 +288,7 @@ function frame(now) {
 
   if (mode === 'dead') {
     text('GAME OVER', mx, my - 14, 32);
-    text(formatScore(finalTime), mx, my + 18, 18, FG, 600);
+    text('SCORE ' + formatScore(finalTime), mx, my + 18, 18, FG, 600);
     text('CLICK TO RETRY', mx, my + 46, 11, DIM, 400);
   }
 
