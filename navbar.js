@@ -7,7 +7,8 @@ const navLinks = [
     { text: "Partners", href: "partners.html" },
     { text: "Newsletter", href: "newsletter.html" },
     { text: "Important Links", href: "importantlinks.html" },
-    { text: "Store", href: "store.html"}
+    { text: "Store", href: "store.html"},
+    { text: "Games", href: "/games/index.html"}
 ];
 
 const nav = document.createElement('nav');
