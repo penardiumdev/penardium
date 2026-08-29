@@ -20,6 +20,7 @@
     --accent-rgb:180,74,232;
     --err:#e85d4a;               /* the warm blob tone, reused for the fail state */
     --err-rgb:232,93,74;
+    --marker:#5aa9e8;            /* blue drawn from the background palette, for beat markers */
     --disp:"Archivo Black",system-ui,sans-serif;
     --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
@@ -59,7 +60,7 @@
   .stat .sub{font-size:13px;color:var(--dim);margin-left:3px}
 
   /* Stage / field */
-  .stage{position:relative;min-height:0;display:flex;flex-direction:column;width:100%;max-width:720px;justify-self:center}
+  .stage{position:relative;min-height:0;display:flex;flex-direction:column;width:100%;max-width:var(--game-w,720px);justify-self:center}
   .field{
     position:relative;flex:1;min-height:0;overflow:hidden;--step:80px;
     background:
@@ -84,6 +85,9 @@
   .note.active .circle{background:var(--fg)}
   .note .custom{width:58%;height:58%;background-image:var(--note-img);background-size:contain;background-position:center;background-repeat:no-repeat;opacity:.6;transition:opacity .12s}
   .note.active .custom{opacity:1}
+  .note.marked:not(.active) .arrow path{fill:var(--marker)}
+  .note.marked:not(.active) .circle{background:var(--marker)}
+  .note.marked:not(.active) .custom{box-shadow:0 0 0 2px var(--marker)}
   body.shape-circle .note .arrow{display:none}
   body.shape-circle .note .circle{display:block}
   body.shape-custom .note .arrow{display:none}
@@ -167,6 +171,10 @@
   .seg button:hover:not([aria-pressed="true"]){color:var(--fg)}
   .seg-label{font-family:var(--body);font-weight:600;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);margin:13px 0 7px}
   .seg.num button{padding:11px 2px}
+  .slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;background:var(--line);border-radius:2px;outline:none;cursor:pointer;margin:4px 0 2px}
+  .slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;background:var(--fg);border:0;cursor:pointer}
+  .slider::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--fg);border:0;cursor:pointer}
+  .slider:focus-visible::-webkit-slider-thumb{outline:2px solid var(--fg);outline-offset:2px}
   .upload-row{display:flex;align-items:center;gap:11px;margin-top:9px}
   .upload-row[hidden]{display:none}
   .upload-row .ghost{margin-left:0;padding:10px 14px}
@@ -272,6 +280,21 @@
                 <button data-n="6">6</button>
                 <button data-n="7">7</button>
               </div>
+            </div>
+            <div class="set-block">
+              <div class="set-head">Color markers <span>recolor every Nth note</span></div>
+              <div class="seg num" id="beat-seg" role="group" aria-label="Color markers">
+                <button data-b="0" aria-pressed="true">Off</button>
+                <button data-b="2">2</button>
+                <button data-b="3">3</button>
+                <button data-b="4">4</button>
+                <button data-b="6">6</button>
+                <button data-b="8">8</button>
+              </div>
+            </div>
+            <div class="set-block">
+              <div class="set-head">Game width <span id="width-val">720px</span></div>
+              <input type="range" class="slider" id="width-slider" min="320" max="720" step="10" value="720" aria-label="Game width">
             </div>
             <div class="set-block">
               <div class="set-head">Display</div>
@@ -451,7 +474,7 @@
 
   // ---- settings (session only) ----
   let binds=Object.assign({},DEFAULT_BINDS);
-  let arrowsEnabled=false, noRepeats=true, size='big', preview=4, fadeUpcoming=false, fadeOut=true, glow=true, whiteHi=false, soundOn=true, bgOff=false, shape='arrows', customImg=null, dividers=true, activeMap={}, settingsOpen=false, awaitingBind=null, bindingEl=null;
+  let arrowsEnabled=false, noRepeats=true, size='big', preview=4, fadeUpcoming=false, fadeOut=true, glow=true, whiteHi=false, soundOn=true, bgOff=false, shape='arrows', customImg=null, dividers=true, beatEvery=0, gameWidth=720, activeMap={}, settingsOpen=false, awaitingBind=null, bindingEl=null;
   const displayKey=k=> (k && k.length===1) ? k.toUpperCase() : (k||"\u2014");
   function buildKeymap(){
     activeMap={};
@@ -472,7 +495,7 @@
       s.textContent = displayKey(binds[d]);
     }
   }
-  let queue=[], tiles=new Map(), nextId=1;
+  let queue=[], tiles=new Map(), nextId=1, seq=0;
   let running=false, started=false, startT=0;
   let cleared=0, rafId=0, mode=0;
   const bests={0:0,30:0,60:0};
@@ -500,6 +523,8 @@
       if(s.shape==='arrows'||s.shape==='circles'||s.shape==='custom') shape=s.shape;
       if(typeof s.customImg==='string' && s.customImg) customImg=s.customImg;
       if(typeof s.dividers==='boolean') dividers=s.dividers;
+      if(typeof s.beatEvery==='number' && s.beatEvery>=0 && s.beatEvery<=16) beatEvery=Math.round(s.beatEvery);
+      if(typeof s.gameWidth==='number' && s.gameWidth>=320 && s.gameWidth<=720) gameWidth=Math.round(s.gameWidth);
       if(typeof s.fadeOut==='boolean') fadeOut=s.fadeOut;
       if(s.mode===0||s.mode===30||s.mode===60) mode=s.mode;
       if(s.bests && typeof s.bests==='object'){ for(const k of ['0','30','60']) if(typeof s.bests[k]==='number' && isFinite(s.bests[k]) && s.bests[k]>=0) bests[k]=Math.floor(s.bests[k]); }
@@ -507,10 +532,11 @@
     }catch(e){}
   }
   function persist(){
-    try{ localStorage.setItem(STORE_KEY, JSON.stringify({binds,arrowsEnabled,noRepeats,size,preview,fadeUpcoming,fadeOut,glow,whiteHi,soundOn,bgOff,shape,customImg,dividers,mode,bests})); }catch(e){}
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify({binds,arrowsEnabled,noRepeats,size,preview,fadeUpcoming,fadeOut,glow,whiteHi,soundOn,bgOff,shape,customImg,dividers,beatEvery,gameWidth,mode,bests})); }catch(e){}
   }
   loadState();
   VISIBLE=preview+1;
+  document.body.style.setProperty('--game-w', gameWidth+'px');
   document.body.classList.toggle('no-glow', !glow);
   document.body.classList.toggle('hl-white', whiteHi);
   document.body.classList.toggle('no-dividers', !dividers);
@@ -529,7 +555,7 @@
     if(lastRun>=3){while(d===lastDir){d=rnd(4);} lastDir=d; lastRun=1;}
     return d;
   }
-  const makeNote=()=>({id:nextId++,dir:pickDir()});
+  const makeNote=()=>({id:nextId++,dir:pickDir(),beat:seq++});
 
   function measure(){
     fieldH=field.clientHeight; fieldW=field.clientWidth;
@@ -566,6 +592,7 @@
       t.style.top=rowTop(i)+'px';
       t.style.opacity = fadeUpcoming ? opacFor(i) : 1;
       t.classList.toggle('active',i===0);
+      t.classList.toggle('marked', beatEvery>0 && (note.beat % beatEvery)===0);
     }
     for(const [id,t] of tiles){
       if(!seen.has(id)){
@@ -583,7 +610,7 @@
   }
 
   function resetState(){
-    running=false; started=false; startT=0; cleared=0; lastDir=-1; lastRun=0;
+    running=false; started=false; startT=0; cleared=0; lastDir=-1; lastRun=0; seq=0;
     cancelAnimationFrame(rafId);
     document.body.classList.remove('playing');
     field.classList.remove('dead');
@@ -746,6 +773,13 @@
   function setSize(s){ if(!(s in SIZE)) return; size=s; syncSizeUI(); if(tiles.size) render(); persist(); }
   function syncPreviewUI(){ document.querySelectorAll('#preview-seg button').forEach(b=>b.setAttribute('aria-pressed', Number(b.dataset.n)===preview?'true':'false')); }
   function setPreview(n){ n=Math.max(1,Math.min(7,n|0)); preview=n; VISIBLE=preview+1; while(queue.length<VISIBLE+1) queue.push(makeNote()); syncPreviewUI(); render(); persist(); }
+  function syncBeatUI(){ document.querySelectorAll('#beat-seg button').forEach(b=>b.setAttribute('aria-pressed', Number(b.dataset.b)===beatEvery?'true':'false')); }
+  function setBeat(b){ beatEvery=Math.max(0,b|0); syncBeatUI(); if(tiles.size) render(); persist(); }
+  const widthSlider=document.getElementById('width-slider');
+  const widthVal=document.getElementById('width-val');
+  function applyWidth(w){ gameWidth=Math.max(320,Math.min(720,w|0)); document.body.style.setProperty('--game-w', gameWidth+'px'); if(widthVal) widthVal.textContent=gameWidth+'px'; if(tiles.size) render(); }
+  function syncWidthUI(){ if(widthSlider) widthSlider.value=gameWidth; if(widthVal) widthVal.textContent=gameWidth+'px'; }
+  function setWidth(w){ applyWidth(w); syncWidthUI(); persist(); }
   function setFade(on){ fadeUpcoming=on; fadeToggle.setAttribute('aria-checked', on?'true':'false'); if(tiles.size) render(); persist(); }
   function setFadeOut(on){ fadeOut=on; fadeoutToggle.setAttribute('aria-checked', on?'true':'false'); persist(); }
   function setGlow(on){ glow=on; glowToggle.setAttribute('aria-checked', on?'true':'false'); document.body.classList.toggle('no-glow', !on); persist(); }
@@ -782,7 +816,7 @@
     };
     reader.readAsDataURL(file);
   }
-  function openSettings(){ if(started) return; settingsOpen=true; awaitingBind=null; renderBindRows(); setArrows(arrowsEnabled); setNoDoubles(noRepeats); syncSizeUI(); syncPreviewUI(); setFade(fadeUpcoming); setFadeOut(fadeOut); setGlow(glow); setWhiteHi(whiteHi); setSound(soundOn); setPlainBg(bgOff); setDividers(dividers); syncShapeUI(); ovSettings.classList.remove('hidden'); }
+  function openSettings(){ if(started) return; settingsOpen=true; awaitingBind=null; renderBindRows(); setArrows(arrowsEnabled); setNoDoubles(noRepeats); syncSizeUI(); syncPreviewUI(); syncBeatUI(); syncWidthUI(); setFade(fadeUpcoming); setFadeOut(fadeOut); setGlow(glow); setWhiteHi(whiteHi); setSound(soundOn); setPlainBg(bgOff); setDividers(dividers); syncShapeUI(); ovSettings.classList.remove('hidden'); }
   function closeSettings(){ settingsOpen=false; awaitingBind=null; ovSettings.classList.add('hidden'); }
 
   bindRows.addEventListener('click',(e)=>{ const b=e.target.closest('.keycap'); if(b) startBind(Number(b.dataset.dir), b); });
@@ -790,6 +824,9 @@
   doublesToggle.addEventListener('click',()=>setNoDoubles(!noRepeats));
   document.getElementById('size-seg').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(b) setSize(b.dataset.size); });
   document.getElementById('preview-seg').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(b) setPreview(Number(b.dataset.n)); });
+  document.getElementById('beat-seg').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(b) setBeat(Number(b.dataset.b)); });
+  widthSlider.addEventListener('input',()=>applyWidth(Number(widthSlider.value)));
+  widthSlider.addEventListener('change',()=>persist());
   fadeToggle.addEventListener('click',()=>setFade(!fadeUpcoming));
   fadeoutToggle.addEventListener('click',()=>setFadeOut(!fadeOut));
   glowToggle.addEventListener('click',()=>setGlow(!glow));
@@ -800,7 +837,7 @@
   document.getElementById('shape-seg').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(b) setShape(b.dataset.shape); });
   document.getElementById('img-btn').addEventListener('click',()=>document.getElementById('img-input').click());
   document.getElementById('img-input').addEventListener('change',(e)=>{ handleImageFile(e.target.files&&e.target.files[0]); e.target.value=''; });
-  document.getElementById('btn-reset').addEventListener('click',()=>{ binds=Object.assign({},DEFAULT_BINDS); setArrows(false); setNoDoubles(true); setSize('big'); setPreview(4); setFade(false); setFadeOut(true); setGlow(true); setWhiteHi(false); setSound(true); setPlainBg(false); setDividers(true); setShape('arrows'); renderBindRows(); });
+  document.getElementById('btn-reset').addEventListener('click',()=>{ binds=Object.assign({},DEFAULT_BINDS); setArrows(false); setNoDoubles(true); setSize('big'); setPreview(4); setBeat(0); setWidth(720); setFade(false); setFadeOut(true); setGlow(true); setWhiteHi(false); setSound(true); setPlainBg(false); setDividers(true); setShape('arrows'); renderBindRows(); });
   document.getElementById('btn-done').addEventListener('click',closeSettings);
   document.getElementById('btn-settings').addEventListener('click',openSettings);
   ovSettings.addEventListener('pointerdown',(e)=>{ if(e.target===ovSettings) closeSettings(); });
