@@ -76,7 +76,7 @@
   body.no-dividers .rcp{border-right:0}
   .field.dead{}
 
-  .note{position:absolute;top:-120px;display:grid;place-items:center;will-change:top,left,opacity;transition:top .085s ease-out,left .085s ease-out,opacity .085s ease-out;pointer-events:none}
+  .note{position:absolute;top:-120px;display:grid;place-items:center;z-index:2;will-change:top,left,opacity;transition:top .085s ease-out,left .085s ease-out,opacity .085s ease-out;pointer-events:none}
   .note .arrow{width:56%;height:56%;transform:rotate(var(--rot,0deg))}
   .note .arrow path{fill:#b8b8b4;transition:fill .12s}
   .note.active .arrow path{fill:var(--fg)}
@@ -94,6 +94,9 @@
   body.shape-custom .note .custom{display:block}
   .field.overlaid .note{opacity:0!important}
   .field.overlaid .rcp.live::before{opacity:0}
+  .links{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:visible}
+  .linkline{fill:none;stroke:#7d7d7a;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+  .field.overlaid .links{opacity:0}
   .note.active{filter:drop-shadow(0 4px 20px rgba(232,232,230,.4))}
   .note.pop{transition:transform .16s ease-out,opacity .16s ease-out}
   .note.shake{animation:shake .2s}
@@ -304,6 +307,10 @@
                   <button class="switch" id="dividers-toggle" role="switch" aria-checked="true" aria-label="Lane dividers"><span class="knob"></span></button>
                 </div>
                 <div class="switch-row">
+                  <div class="sr-text"><div class="sr-t">Connecting lines</div><div class="sr-d">Draw a line through the upcoming notes</div></div>
+                  <button class="switch" id="connect-toggle" role="switch" aria-checked="false" aria-label="Connecting lines"><span class="knob"></span></button>
+                </div>
+                <div class="switch-row">
                   <div class="sr-text"><div class="sr-t">Fade upcoming</div><div class="sr-d">Dim the notes further up the queue</div></div>
                   <button class="switch" id="fade-toggle" role="switch" aria-checked="false" aria-label="Fade upcoming"><span class="knob"></span></button>
                 </div>
@@ -474,7 +481,7 @@
 
   // ---- settings (session only) ----
   let binds=Object.assign({},DEFAULT_BINDS);
-  let arrowsEnabled=false, noRepeats=true, size='big', preview=4, fadeUpcoming=false, fadeOut=true, glow=true, whiteHi=false, soundOn=true, bgOff=false, shape='arrows', customImg=null, dividers=true, beatEvery=0, gameWidth=720, activeMap={}, settingsOpen=false, awaitingBind=null, bindingEl=null;
+  let arrowsEnabled=false, noRepeats=true, size='big', preview=4, fadeUpcoming=false, fadeOut=true, glow=true, whiteHi=false, soundOn=true, bgOff=false, shape='arrows', customImg=null, dividers=true, beatEvery=0, gameWidth=720, connectOn=false, activeMap={}, settingsOpen=false, awaitingBind=null, bindingEl=null;
   const displayKey=k=> (k && k.length===1) ? k.toUpperCase() : (k||"\u2014");
   function buildKeymap(){
     activeMap={};
@@ -525,6 +532,7 @@
       if(typeof s.dividers==='boolean') dividers=s.dividers;
       if(typeof s.beatEvery==='number' && s.beatEvery>=0 && s.beatEvery<=16) beatEvery=Math.round(s.beatEvery);
       if(typeof s.gameWidth==='number' && s.gameWidth>=320 && s.gameWidth<=720) gameWidth=Math.round(s.gameWidth);
+      if(typeof s.connectOn==='boolean') connectOn=s.connectOn;
       if(typeof s.fadeOut==='boolean') fadeOut=s.fadeOut;
       if(s.mode===0||s.mode===30||s.mode===60) mode=s.mode;
       if(s.bests && typeof s.bests==='object'){ for(const k of ['0','30','60']) if(typeof s.bests[k]==='number' && isFinite(s.bests[k]) && s.bests[k]>=0) bests[k]=Math.floor(s.bests[k]); }
@@ -532,11 +540,30 @@
     }catch(e){}
   }
   function persist(){
-    try{ localStorage.setItem(STORE_KEY, JSON.stringify({binds,arrowsEnabled,noRepeats,size,preview,fadeUpcoming,fadeOut,glow,whiteHi,soundOn,bgOff,shape,customImg,dividers,beatEvery,gameWidth,mode,bests})); }catch(e){}
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify({binds,arrowsEnabled,noRepeats,size,preview,fadeUpcoming,fadeOut,glow,whiteHi,soundOn,bgOff,shape,customImg,dividers,beatEvery,gameWidth,connectOn,mode,bests})); }catch(e){}
   }
+  // connecting-line overlay (tracks note centres each frame while on)
+  const SVGNS='http://www.w3.org/2000/svg';
+  const links=document.createElementNS(SVGNS,'svg'); links.setAttribute('class','links'); links.style.display='none';
+  const linkPath=document.createElementNS(SVGNS,'polyline'); linkPath.setAttribute('class','linkline');
+  links.appendChild(linkPath); field.appendChild(links);
+  let linkRaf=0;
+  function updateLinks(){
+    const fr=field.getBoundingClientRect(); let p='';
+    for(let i=0;i<VISIBLE;i++){
+      const note=queue[i]; if(!note) continue;
+      const t=tiles.get(note.id); if(!t) continue;
+      const r=t.getBoundingClientRect();
+      p+=(r.left+r.width/2-fr.left)+','+(r.top+r.height/2-fr.top)+' ';
+    }
+    linkPath.setAttribute('points', p.trim());
+  }
+  function linkLoop(){ updateLinks(); linkRaf=requestAnimationFrame(linkLoop); }
+
   loadState();
   VISIBLE=preview+1;
   document.body.style.setProperty('--game-w', gameWidth+'px');
+  links.style.display=connectOn?'':'none'; if(connectOn) linkLoop();
   document.body.classList.toggle('no-glow', !glow);
   document.body.classList.toggle('hl-white', whiteHi);
   document.body.classList.toggle('no-dividers', !dividers);
@@ -741,6 +768,7 @@
   const soundToggle=document.getElementById('sound-toggle');
   const bgToggle=document.getElementById('bg-toggle');
   const dividersToggle=document.getElementById('dividers-toggle');
+  const connectToggle=document.getElementById('connect-toggle');
   const ovSettings=document.getElementById('ov-settings');
 
   function renderBindRows(){
@@ -787,6 +815,7 @@
   function setSound(on){ soundOn=on; soundToggle.setAttribute('aria-checked', on?'true':'false'); Sound.setOn(on); persist(); }
   function setPlainBg(on){ bgOff=on; bgToggle.setAttribute('aria-checked', on?'true':'false'); if(window.BgFX) window.BgFX.setPlain(on); persist(); }
   function setDividers(on){ dividers=on; dividersToggle.setAttribute('aria-checked', on?'true':'false'); document.body.classList.toggle('no-dividers', !on); persist(); }
+  function setConnect(on){ connectOn=on; connectToggle.setAttribute('aria-checked', on?'true':'false'); links.style.display=on?'':'none'; if(on){ if(!linkRaf) linkLoop(); } else { cancelAnimationFrame(linkRaf); linkRaf=0; } persist(); }
   function setNoteImg(url){ try{ document.body.style.setProperty('--note-img','url("'+url+'")'); }catch(e){} }
   function applyShape(){
     document.body.classList.toggle('shape-circle', shape==='circles');
@@ -816,7 +845,7 @@
     };
     reader.readAsDataURL(file);
   }
-  function openSettings(){ if(started) return; settingsOpen=true; awaitingBind=null; renderBindRows(); setArrows(arrowsEnabled); setNoDoubles(noRepeats); syncSizeUI(); syncPreviewUI(); syncBeatUI(); syncWidthUI(); setFade(fadeUpcoming); setFadeOut(fadeOut); setGlow(glow); setWhiteHi(whiteHi); setSound(soundOn); setPlainBg(bgOff); setDividers(dividers); syncShapeUI(); ovSettings.classList.remove('hidden'); }
+  function openSettings(){ if(started) return; settingsOpen=true; awaitingBind=null; renderBindRows(); setArrows(arrowsEnabled); setNoDoubles(noRepeats); syncSizeUI(); syncPreviewUI(); syncBeatUI(); syncWidthUI(); setFade(fadeUpcoming); setFadeOut(fadeOut); setGlow(glow); setWhiteHi(whiteHi); setSound(soundOn); setPlainBg(bgOff); setDividers(dividers); setConnect(connectOn); syncShapeUI(); ovSettings.classList.remove('hidden'); }
   function closeSettings(){ settingsOpen=false; awaitingBind=null; ovSettings.classList.add('hidden'); }
 
   bindRows.addEventListener('click',(e)=>{ const b=e.target.closest('.keycap'); if(b) startBind(Number(b.dataset.dir), b); });
@@ -834,10 +863,11 @@
   soundToggle.addEventListener('click',()=>setSound(!soundOn));
   bgToggle.addEventListener('click',()=>setPlainBg(!bgOff));
   dividersToggle.addEventListener('click',()=>setDividers(!dividers));
+  connectToggle.addEventListener('click',()=>setConnect(!connectOn));
   document.getElementById('shape-seg').addEventListener('click',(e)=>{ const b=e.target.closest('button'); if(b) setShape(b.dataset.shape); });
   document.getElementById('img-btn').addEventListener('click',()=>document.getElementById('img-input').click());
   document.getElementById('img-input').addEventListener('change',(e)=>{ handleImageFile(e.target.files&&e.target.files[0]); e.target.value=''; });
-  document.getElementById('btn-reset').addEventListener('click',()=>{ binds=Object.assign({},DEFAULT_BINDS); setArrows(false); setNoDoubles(true); setSize('big'); setPreview(4); setBeat(0); setWidth(720); setFade(false); setFadeOut(true); setGlow(true); setWhiteHi(false); setSound(true); setPlainBg(false); setDividers(true); setShape('arrows'); renderBindRows(); });
+  document.getElementById('btn-reset').addEventListener('click',()=>{ binds=Object.assign({},DEFAULT_BINDS); setArrows(false); setNoDoubles(true); setSize('big'); setPreview(4); setBeat(0); setWidth(720); setFade(false); setFadeOut(true); setGlow(true); setWhiteHi(false); setSound(true); setPlainBg(false); setDividers(true); setConnect(false); setShape('arrows'); renderBindRows(); });
   document.getElementById('btn-done').addEventListener('click',closeSettings);
   document.getElementById('btn-settings').addEventListener('click',openSettings);
   ovSettings.addEventListener('pointerdown',(e)=>{ if(e.target===ovSettings) closeSettings(); });
