@@ -32,6 +32,8 @@
     { name: 'DODGE ARENA',    file: 'dodge-arena.html' },
     { name: 'MEMORY ARENA',   file: 'memory-arena.html' },
     { name: 'APPROACH ARENA', file: 'approach-arena.html' },
+    { name: 'TETERS', file: 'tetris.html' },
+    { name: 'KEYSTREAM', file: 'keystream.html' },
   ];
 
   // pointer-events:none lets mouse events fall through the nav to whatever
