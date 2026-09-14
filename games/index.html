@@ -1,144 +1,195 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<title>Penardium Games</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet">
-<style>
-  html, body {
-    margin: 0;
-    overflow: hidden;
-    background: #1a1a1d;
-    font-family: "Archivo Black", sans-serif;
-    cursor: none;
-  }
-  *, *::before, *::after { cursor: none !important; }
-  #bg { position: fixed; inset: 0; z-index: 0; display: block; }
-  .game-frame {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: transparent;
-    opacity: 0;
-    pointer-events: none;
-    z-index: 1;
-    transition: opacity 350ms ease;
-  }
-  .game-frame.active {
-    opacity: 1;
-    pointer-events: auto;
-    z-index: 2;
-  }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penardium | Games</title>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <style>
+        /* Basic Reset */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Background and Full-Page Layout */
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        nav {
+            width: 100%;
+            background: #000;
+            border-bottom: 2px solid #0f0;
+            padding: 16px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+        }
+
+        nav a {
+            color: #0f0;
+            text-decoration: none;
+            margin: 0 20px;
+            font-size: 1.1rem;
+            text-shadow: 0 0 5px #0f0;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: #fff;
+        }
+
+        /* Matrix Effect */
+        .matrix {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: -1;
+        }
+
+        .matrix span {
+            position: absolute;
+            top: -100%;
+            font-size: 20px;
+            color: #0f0;
+            white-space: nowrap;
+            animation: drop 4s linear infinite;
+        }
+
+        @keyframes drop {
+            0% {
+                top: -100%;
+            }
+
+            100% {
+                top: 100%;
+            }
+        }
+
+        /* Main Content Area */
+        .content {
+            text-align: center;
+            z-index: 1;
+            padding: 20px;
+            min-width: 50%;
+            max-width: 80%;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+            margin-top: 128px;
+            margin-bottom: 64px;
+            height: fit-content;
+        }
+
+        h1 {
+            font-size: 3rem;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+        }
+
+        p {
+            font-size: 1.2rem;
+            line-height: 1.5;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        /* Neon Glowing Text */
+        h1,
+        p {
+            text-shadow: 0 0 10px #0f0, 0 0 20px #0f0, 0 0 30px #0f0;
+        }
+
+        /* Game Menu */
+        .menu {
+            list-style: none;
+            max-width: 480px;
+            margin: 32px auto 8px;
+        }
+
+        .menu li {
+            margin: 16px 0;
+        }
+
+        .menu a {
+            display: block;
+            padding: 14px 20px;
+            color: #0f0;
+            text-decoration: none;
+            font-size: 1.3rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border: 2px solid #0f0;
+            border-radius: 6px;
+            text-shadow: 0 0 8px #0f0;
+            transition: background 0.3s, color 0.3s, box-shadow 0.3s;
+        }
+
+        .menu a:hover,
+        .menu a:focus {
+            background: #0f0;
+            color: #000;
+            text-shadow: none;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.8);
+            outline: none;
+        }
+
+        @media (max-width: 920px) {
+            nav {
+                flex-direction: column;
+                position: absolute;
+            }
+
+            .content {
+                margin-top: 228px;
+            }
+        }
+    </style>
 </head>
+
 <body>
-<canvas id="bg"></canvas>
-<iframe class="game-frame active" id="game-a" allowtransparency="true" allow="autoplay"></iframe>
-<iframe class="game-frame" id="game-b" allowtransparency="true" allow="autoplay"></iframe>
-<script src="background.js"></script>
-<script src="sound.js"></script>
-<script>
-(function () {
-  const DEFAULT = 'dribble-arena.html';
-  const VALID = new Set([
-    'dribble-arena.html',
-    'dodge-arena.html',
-    'memory-arena.html',
-    'approach-arena.html',
-  ]);
 
-  function fileFromHash() {
-    const slug = (location.hash || '').replace(/^#/, '');
-    if (!slug) return DEFAULT;
-    const file = slug.endsWith('.html') ? slug : slug + '.html';
-    return VALID.has(file) ? file : DEFAULT;
-  }
+    <div class="matrix">
+        <!-- Matrix Rain Effect (Random Characters) -->
+        <span style="left: 10%; animation-duration: 3s;">P</span>
+        <span style="left: 30%; animation-duration: 4s;">e</span>
+        <span style="left: 50%; animation-duration: 5s;">n</span>
+        <span style="left: 70%; animation-duration: 4s;">a</span>
+        <span style="left: 90%; animation-duration: 3s;">r</span>
+        <span style="left: 20%; animation-duration: 6s;">d</span>
+        <span style="left: 40%; animation-duration: 7s;">i</span>
+        <span style="left: 60%; animation-duration: 3s;">u</span>
+        <span style="left: 80%; animation-duration: 5s;">m</span>
+    </div>
 
-  // Two iframes: the new game loads into the inactive one in the background
-  // while the active one stays on screen. Once the new one's `load` event
-  // fires we swap the .active class — CSS transitions the opacities so the
-  // old game fades out as the new one fades in (both arenas are centered
-  // 300px squares, so they overlap perfectly during the crossfade).
-  const frameA = document.getElementById('game-a');
-  const frameB = document.getElementById('game-b');
-  let activeFrame = frameA;
-  let inactiveFrame = frameB;
-  let currentFile = '';
-  const changeListeners = [];
-
-  function emitChange() {
-    for (const cb of changeListeners) {
-      try { cb(currentFile); } catch (e) {}
-    }
-  }
-
-  function navigate(file) {
-    if (!VALID.has(file)) file = DEFAULT;
-    if (file === currentFile) return;
-    const target = inactiveFrame;
-    target.addEventListener('load', function onLoad() {
-      // Promote the now-loaded frame to active in a single tick.
-      activeFrame.classList.remove('active');
-      target.classList.add('active');
-      const old = activeFrame;
-      activeFrame = target;
-      inactiveFrame = old;
-      currentFile = file;
-      try {
-        history.replaceState(null, '', '#' + file.replace(/\.html$/, ''));
-      } catch (e) {}
-      emitChange();
-      // Free the old game so it stops chewing CPU on its raf loop. We
-      // re-use the slot for the next navigation. Wait for the opacity
-      // crossfade to finish first — blanking it mid-fade would flash.
-      setTimeout(() => {
-        if (inactiveFrame === old) old.src = 'about:blank';
-      }, 400);
-    }, { once: true });
-    target.src = file;
-  }
-
-  window.GameShell = {
-    getCurrentFile: () => currentFile,
-    navigate,
-    onChange: (cb) => changeListeners.push(cb),
-    isCrossOrigin: () => {
-      try { void activeFrame.contentWindow.location.href; return false; }
-      catch (e) { return true; }
-    },
-  };
-
-  // Initial load goes straight into the already-active frame — no swap
-  // needed since there's nothing to crossfade from.
-  const initial = fileFromHash();
-  currentFile = initial;
-  activeFrame.addEventListener('load', () => emitChange(), { once: true });
-  activeFrame.src = initial;
-
-  BackgroundFX.start(document.getElementById('bg'));
-
-  // Cross-origin iframes (Chrome on file://) can't share localStorage with
-  // the shell, so the EFFECTS toggle inside the iframe nav posts a message
-  // up to us; we mirror it into the shell's storage so BackgroundFX picks
-  // it up. Same-origin iframes don't need this — they hit shell localStorage
-  // directly via the topNav proxy.
-  addEventListener('message', (e) => {
-    const data = e.data;
-    if (data && data.type === 'gameBg:set') {
-      localStorage.setItem('penardiumBgOff', data.off ? '1' : '0');
-    }
-  });
-
-  addEventListener('hashchange', () => {
-    const f = fileFromHash();
-    if (f !== currentFile) navigate(f);
-  });
-})();
-</script>
-<script src="nav.js"></script>
+    <div class="content">
+        <h1>Games</h1>
+        <p>Pick one to play.</p>
+        <ul class="menu">
+            <li><a href="dribble-arena.html">Dribble Arena</a></li>
+            <li><a href="dodge-arena.html">Dodge Arena</a></li>
+            <li><a href="memory-arena.html">Memory Arena</a></li>
+            <li><a href="approach-arena.html">Approach Arena</a></li>
+            <li><a href="tetris.html">Teters</a></li>
+            <li><a href="keystream.html">Keystream</a></li>
+        </ul>
+    </div>
+    <script src="navbar.js"></script>
 </body>
+
 </html>
