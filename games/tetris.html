@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tetris</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;500;600;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { max-width: 100vw; max-height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+(() => {
+  // ---------- layout ----------
+  const COLS = 10, ROWS = 20, CELL = 30;
+  const PAD = 30, GAP = 24, SIDE = 4 * CELL;
+  const BOARD_X = PAD + SIDE + GAP, BOARD_Y = PAD;
+  const BOARD_W = COLS * CELL, BOARD_H = ROWS * CELL;
+  const NEXT_X = BOARD_X + BOARD_W + GAP;
+  const W = NEXT_X + SIDE + PAD, H = BOARD_H + PAD * 2;
+  const F = '"Chakra Petch", "Segoe UI", system-ui, sans-serif';
+
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(dpr, dpr);
+
+  if (document.fonts && document.fonts.load) {
+    ['500 10px', '700 30px', '700 34px', '300 12px'].forEach(w =>
+      document.fonts.load(`${w} "Chakra Petch"`).catch(() => {}));
+  }
+
+  const COLORS = {
+    I: '#22e6e6', J: '#3b6bff', L: '#ff9420',
+    O: '#ffe11c', S: '#31e35a', T: '#c04dff', Z: '#ff2f52'
+  };
+
+  const BASE = {
+    I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+    J: [[1,0,0],[1,1,1],[0,0,0]],
+    L: [[0,0,1],[1,1,1],[0,0,0]],
+    O: [[1,1],[1,1]],
+    S: [[0,1,1],[1,1,0],[0,0,0]],
+    T: [[0,1,0],[1,1,1],[0,0,0]],
+    Z: [[1,1,0],[0,1,1],[0,0,0]]
+  };
+
+  const rotateCW = m => m.map((row, y) => row.map((_, x) => m[m.length - 1 - x][y]));
+  const STATES = {};
+  for (const k in BASE) {
+    STATES[k] = [BASE[k]];
+    for (let i = 1; i < 4; i++) STATES[k].push(rotateCW(STATES[k][i - 1]));
+  }
+
+  // SRS kicks (y inverted: our grid grows downward)
+  const KICKS_JLSTZ = {
+    '01': [[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],
+    '10': [[0,0],[1,0],[1,1],[0,-2],[1,-2]],
+    '12': [[0,0],[1,0],[1,1],[0,-2],[1,-2]],
+    '21': [[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],
+    '23': [[0,0],[1,0],[1,-1],[0,2],[1,2]],
+    '32': [[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]],
+    '30': [[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]],
+    '03': [[0,0],[1,0],[1,-1],[0,2],[1,2]]
+  };
+  const KICKS_I = {
+    '01': [[0,0],[-2,0],[1,0],[-2,1],[1,-2]],
+    '10': [[0,0],[2,0],[-1,0],[2,-1],[-1,2]],
+    '12': [[0,0],[-1,0],[2,0],[-1,-2],[2,1]],
+    '21': [[0,0],[1,0],[-2,0],[1,2],[-2,-1]],
+    '23': [[0,0],[2,0],[-1,0],[2,-1],[-1,2]],
+    '32': [[0,0],[-2,0],[1,0],[-2,1],[1,-2]],
+    '30': [[0,0],[1,0],[-2,0],[1,2],[-2,-1]],
+    '03': [[0,0],[-1,0],[2,0],[-1,-2],[2,1]]
+  };
+
+  // ---------- difficulty ----------
+  // Levels 1-15 keep their original speeds; past that gravity keeps compounding.
+  const GRAVITY = [800, 700, 600, 520, 440, 360, 290, 220, 160, 120, 95, 80, 68, 58, 50];
+  const NAMED = GRAVITY.length;
+  const GRAV_FLOOR = 11;
+  const TIERS = ['Gentle','Gentle','Steady','Steady','Brisk','Brisk','Fast','Fast',
+                 'Frantic','Frantic','Vicious','Vicious','Merciless','Merciless','Merciless',
+                 'Savage','Savage','Brutal','Brutal','Inhuman','Inhuman','Nightmare','Nightmare',
+                 'Oblivion','Oblivion','Event Horizon','Event Horizon','Singularity'];
+  const LINE_SCORE = [0, 100, 300, 500, 800];
+  const CLEAR_NAME = ['', 'Single', 'Double', 'Triple', 'Tetris'];
+
+  let board, piece, queue, bag, hold, holdUsed, dead;
+  let dropTimer, dropInterval, lockTimer, lockResets;
+  let score, shownScore, lines, level, combo, backToBack;
+  const HS_COOKIE = 'tetrisHighScore';
+  function readHigh() {
+    try {
+      const m = document.cookie.match(/(?:^|;\s*)tetrisHighScore=(\d+)/);
+      return m ? parseInt(m[1], 10) : 0;
+    } catch (e) { return 0; }
+  }
+  function writeHigh(v) {
+    try {
+      document.cookie = `${HS_COOKIE}=${v}; max-age=${60 * 60 * 24 * 3650}; path=/; SameSite=Lax`;
+    } catch (e) { /* cookies blocked: the score still holds for this session */ }
+  }
+  let best = readHigh(), recorded = false, newRecord = false;
+
+  let clearing = null, particles = [], texts = [], trails = [], flash = 0, shake = 0;
+  let time = 0, lockDelay = 500;
+  const MAX_RESETS = 15, CLEAR_TIME = 130;
+
+  function roman(n) {
+    const map = [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],
+                 [40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
+    let out = '';
+    for (const [v, sym] of map) while (n >= v) { out += sym; n -= v; }
+    return out;
+  }
+
+  // Endless: once the names run out, Singularity keeps counting up.
+  function tierName() {
+    if (level <= TIERS.length) return TIERS[level - 1];
+    return 'Singularity ' + roman(level - TIERS.length + 1);
+  }
+
+  // Cyan through red over the first 15, then on into violet forever.
+  function tierHue() {
+    if (level <= NAMED) return 188 - ((level - 1) / (NAMED - 1)) * 188;
+    return 360 - Math.min(1, (level - NAMED) / 13) * 72;
+  }
+  const tierLight = () => (level > NAMED + 13 ? 74 : 62);
+  const tierColor = (l = tierLight(), a = 1) => `hsla(${tierHue()}, 90%, ${l}%, ${a})`;
+
+  function gravityFor(l) {
+    if (l <= NAMED) return GRAVITY[l - 1];
+    return Math.max(GRAV_FLOOR, GRAVITY[NAMED - 1] * Math.pow(0.88, l - NAMED));
+  }
+
+  // Once gravity bottoms out, the squeeze moves to the lock delay instead.
+  function lockDelayFor(l) {
+    return l <= 20 ? 500 : Math.max(160, 500 - (l - 20) * 24);
+  }
+
+  function setLevel() {
+    const prev = level;
+    level = Math.floor(lines / 10) + 1;
+    dropInterval = gravityFor(level);
+    lockDelay = lockDelayFor(level);
+    if (prev && level > prev) {
+      flash = Math.max(flash, 0.5);
+      shake = Math.max(shake, 7);
+      addText('Level ' + level, tierColor(65), 30, -40);
+      addText(tierName(), tierColor(65), 17, -6);
+      for (let i = 0; i < 70; i++) burst(BOARD_X + Math.random() * BOARD_W, BOARD_Y + BOARD_H * 0.5, tierColor(65), 3);
+    }
+  }
+
+  // ---------- pieces ----------
+  function refillBag() {
+    const keys = Object.keys(BASE);
+    for (let i = keys.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [keys[i], keys[j]] = [keys[j], keys[i]];
+    }
+    bag.push(...keys);
+  }
+  const nextType = () => (bag.length < 1 && refillBag(), bag.shift());
+
+  function spawn(type) {
+    const p = { type, rot: 0, x: type === 'O' ? 4 : 3, y: 0 };
+    if (collides(p, 0, 0, 0)) { dead = true; shake = 14; flash = 0.4; }
+    piece = p;
+    lockTimer = 0; lockResets = 0; dropTimer = 0;
+  }
+  function shiftIn() { queue.push(nextType()); spawn(queue.shift()); }
+  const shape = (p, rot = p.rot) => STATES[p.type][((rot % 4) + 4) % 4];
+
+  function collides(p, dx, dy, drot) {
+    const m = shape(p, p.rot + drot);
+    for (let y = 0; y < m.length; y++)
+      for (let x = 0; x < m.length; x++) {
+        if (!m[y][x]) continue;
+        const nx = p.x + x + dx, ny = p.y + y + dy;
+        if (nx < 0 || nx >= COLS || ny >= ROWS) return true;
+        if (ny >= 0 && board[ny][nx]) return true;
+      }
+    return false;
+  }
+
+  function touch() { if (lockResets < MAX_RESETS && lockTimer > 0) { lockTimer = 0; lockResets++; } }
+
+  function move(dx, dy) {
+    if (collides(piece, dx, dy, 0)) return false;
+    piece.x += dx; piece.y += dy;
+    touch();
+    return true;
+  }
+
+  function rotate(dir) {
+    if (piece.type === 'O') return;
+    const from = piece.rot, to = ((from + dir) % 4 + 4) % 4;
+    const table = piece.type === 'I' ? KICKS_I : KICKS_JLSTZ;
+    for (const [kx, ky] of table['' + from + to]) {
+      if (!collides(piece, kx, ky, dir)) {
+        piece.x += kx; piece.y += ky; piece.rot = to;
+        touch();
+        for (const c of cellsOf(piece)) if (c.y >= 0)
+          spark(BOARD_X + c.x * CELL + CELL / 2, BOARD_Y + c.y * CELL + CELL / 2, COLORS[piece.type]);
+        return;
+      }
+    }
+  }
+
+  function cellsOf(p, rot) {
+    const m = shape(p, rot), out = [];
+    for (let y = 0; y < m.length; y++)
+      for (let x = 0; x < m.length; x++)
+        if (m[y][x]) out.push({ x: p.x + x, y: p.y + y });
+    return out;
+  }
+
+  function lock() {
+    const cells = cellsOf(piece);
+    for (const c of cells) {
+      if (c.y < 0) { dead = true; continue; }
+      board[c.y][c.x] = piece.type;
+    }
+    for (const c of cells) if (c.y >= 0)
+      trails.push({ x: BOARD_X + c.x * CELL, y: BOARD_Y + c.y * CELL, s: CELL, life: 1, color: '#ffffff' });
+
+    const full = [];
+    for (let y = 0; y < ROWS; y++) if (board[y].every(v => v)) full.push(y);
+
+    if (full.length) {
+      const n = full.length;
+      let gained = LINE_SCORE[n] * level;
+      if (n === 4 && backToBack) gained = Math.round(gained * 1.5);
+      combo++;
+      if (combo > 0) gained += 50 * combo * level;
+      score += gained;
+      lines += n;
+      backToBack = n === 4;
+
+      shake = Math.max(shake, 4 + n * 3.5);
+      flash = Math.max(flash, n === 4 ? 0.65 : 0.12 * n);
+      clearing = { rows: full, t: 0 };
+
+      const midY = BOARD_Y + (full[0] + full[full.length - 1] + 1) / 2 * CELL;
+      for (const y of full)
+        for (let x = 0; x < COLS; x++)
+          burst(BOARD_X + x * CELL + CELL / 2, BOARD_Y + y * CELL + CELL / 2, COLORS[board[y][x]], n === 4 ? 9 : 6);
+
+      addText(CLEAR_NAME[n], n === 4 ? '#ffe11c' : '#ffffff', n === 4 ? 34 : 24, midY - BOARD_Y - BOARD_H / 2 - 14);
+      if (combo > 0) addText(combo + 1 + ' chain', tierColor(68), 15, midY - BOARD_Y - BOARD_H / 2 + 14);
+      addText('+' + gained, 'rgba(255,255,255,0.75)', 14, midY - BOARD_Y - BOARD_H / 2 + (combo > 0 ? 34 : 14));
+    } else {
+      combo = -1;
+      shake = Math.max(shake, 1.6);
+      clearing = null;
+      holdUsed = false;
+      shiftIn();
+    }
+  }
+
+  function finishClear() {
+    for (const y of clearing.rows) {
+      board.splice(y, 1);
+      board.unshift(new Array(COLS).fill(null));
+    }
+    clearing = null;
+    holdUsed = false;
+    setLevel();
+    shiftIn();
+  }
+
+  function hardDrop() {
+    const from = piece.y;
+    let d = 0;
+    while (move(0, 1)) d++;
+    if (d) {
+      score += d * 2;
+      for (const c of cellsOf(piece))
+        trails.push({ x: BOARD_X + c.x * CELL, y: BOARD_Y + (from + (c.y - piece.y)) * CELL,
+                      s: CELL, h: d * CELL, life: 1, color: COLORS[piece.type] });
+      shake = Math.max(shake, Math.min(6, 1.5 + d * 0.28));
+    }
+    lock();
+  }
+
+  function swapHold() {
+    if (holdUsed) return;
+    const cur = piece.type;
+    if (hold) { const h = hold; hold = cur; spawn(h); }
+    else { hold = cur; shiftIn(); }
+    holdUsed = true;
+    spark(PAD + SIDE / 2, BOARD_Y + SIDE / 2, COLORS[hold]);
+  }
+
+  function ghostY() {
+    let d = 0;
+    while (!collides(piece, 0, d + 1, 0)) d++;
+    return piece.y + d;
+  }
+
+  function reset() {
+    board = Array.from({ length: ROWS }, () => new Array(COLS).fill(null));
+    bag = []; queue = [nextType(), nextType(), nextType()];
+    hold = null; holdUsed = false; dead = false;
+    score = 0; shownScore = 0; lines = 0; combo = -1; backToBack = false;
+    recorded = false; newRecord = false;
+    level = 0; setLevel();
+    clearing = null; particles = []; texts = []; trails = []; flash = 0; shake = 0;
+    spawn(queue.shift());
+    queue.push(nextType());
+  }
+
+  // ---------- effects ----------
+  function burst(x, y, color, n) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 0.12 + Math.random() * 0.5;
+      particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.12,
+        life: 1, decay: 0.0026 + Math.random() * 0.0034, size: 1.5 + Math.random() * 3.5, color });
+    }
+    if (particles.length > 700) particles.splice(0, particles.length - 700);
+  }
+  function spark(x, y, color) { burst(x, y, color, 5); }
+  function addText(text, color, size, dy) {
+    texts.push({ text, color, size, x: BOARD_X + BOARD_W / 2, y: BOARD_Y + BOARD_H / 2 + dy, life: 1 });
+  }
+
+  // ---------- pre-rendered glow tiles ----------
+  const tiles = new Map();
+  function rr(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y); c.lineTo(x + w - r, y); c.quadraticCurveTo(x + w, y, x + w, y + r);
+    c.lineTo(x + w, y + h - r); c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    c.lineTo(x + r, y + h); c.quadraticCurveTo(x, y + h, x, y + h - r);
+    c.lineTo(x, y + r); c.quadraticCurveTo(x, y, x + r, y); c.closePath();
+  }
+  function tile(color, size) {
+    const key = color + '|' + size;
+    if (tiles.has(key)) return tiles.get(key);
+    const m = Math.ceil(size * 0.35);
+    const c = document.createElement('canvas');
+    c.width = c.height = (size + m * 2) * dpr;
+    const g = c.getContext('2d');
+    g.scale(dpr, dpr);
+    const r = Math.max(2, size * 0.16), s = size - 2;
+    g.shadowColor = color; g.shadowBlur = size * 0.28;
+    g.fillStyle = color;
+    rr(g, m + 1, m + 1, s, s, r); g.fill();
+    g.shadowBlur = 0;
+    const lg = g.createLinearGradient(0, m, 0, m + size);
+    lg.addColorStop(0, 'rgba(255,255,255,0.6)');
+    lg.addColorStop(0.4, 'rgba(255,255,255,0.06)');
+    lg.addColorStop(0.62, 'rgba(0,0,0,0.06)');
+    lg.addColorStop(1, 'rgba(0,0,0,0.42)');
+    g.fillStyle = lg; rr(g, m + 1, m + 1, s, s, r); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 1;
+    rr(g, m + 1.5, m + 1.5, s - 1, s - 1, r); g.stroke();
+    const out = { c, m };
+    tiles.set(key, out);
+    return out;
+  }
+  function block(px, py, color, size = CELL, alpha = 1) {
+    size = Math.round(size);
+    const t = tile(color, size);
+    if (alpha !== 1) { ctx.globalAlpha = alpha; }
+    ctx.drawImage(t.c, px - t.m, py - t.m, (size + t.m * 2), (size + t.m * 2));
+    if (alpha !== 1) ctx.globalAlpha = 1;
+  }
+
+  // background motes
+  const motes = Array.from({ length: 46 }, () => ({
+    x: Math.random() * W, y: Math.random() * H,
+    r: 0.5 + Math.random() * 1.6, sp: 0.004 + Math.random() * 0.016, a: 0.06 + Math.random() * 0.22
+  }));
+
+  // ---------- input ----------
+  const DAS = 150, ARR = 35, SOFT = 35;
+  const keys = {};
+  const timers = { ArrowLeft: 0, ArrowRight: 0, ArrowDown: 0 };
+
+  addEventListener('keydown', e => {
+    const k = e.key;
+    if (['ArrowLeft','ArrowRight','ArrowDown','ArrowUp',' '].includes(k)) e.preventDefault();
+    if (dead) { if (k === 'Enter' || k === ' ') reset(); return; }
+    if (e.repeat || clearing) return;
+    keys[k] = true;
+    if (k === 'ArrowLeft') { move(-1, 0); timers.ArrowLeft = -DAS; }
+    else if (k === 'ArrowRight') { move(1, 0); timers.ArrowRight = -DAS; }
+    else if (k === 'ArrowDown') { if (move(0, 1)) { dropTimer = 0; score++; } timers.ArrowDown = 0; }
+    else if (k === ' ') hardDrop();
+    else if (k === 'z' || k === 'Z') rotate(-1);
+    else if (k === 'x' || k === 'X' || k === 'ArrowUp') rotate(1);
+    else if (k === 'c' || k === 'C') swapHold();
+  });
+  addEventListener('keyup', e => { keys[e.key] = false; });
+
+  function autoRepeat(key, dx, dt) {
+    if (!keys[key]) { timers[key] = 0; return; }
+    timers[key] += dt;
+    const rate = key === 'ArrowDown' ? SOFT : ARR;
+    while (timers[key] >= rate) {
+      timers[key] -= rate;
+      if (dx !== 0) move(dx, 0);
+      else if (move(0, 1)) { dropTimer = 0; score++; }
+    }
+  }
+
+  // ---------- drawing ----------
+  const ls = v => { if ('letterSpacing' in ctx) ctx.letterSpacing = v; };
+
+  // Small tracked-out caption used for every HUD field name.
+  function caption(t, x, y, a = 0.4) {
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.font = `500 10px ${F}`;
+    ls('0.22em');
+    ctx.fillText(t, x, y);
+    ls('0px');
+  }
+
+  // Big readout numerals.
+  function readout(t, x, y, size, color) {
+    ctx.fillStyle = color;
+    ctx.font = `700 ${size}px ${F}`;
+    ls('0.02em');
+    ctx.fillText(t, x, y);
+    ls('0px');
+  }
+
+  function panel(x, y, w, h, glow) {
+    ctx.fillStyle = 'rgba(255,255,255,0.025)';
+    rr(ctx, x, y, w, h, 6); ctx.fill();
+    ctx.strokeStyle = glow || 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    rr(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 6); ctx.stroke();
+  }
+
+  function drawMini(type, cx, cy, size, alpha = 1) {
+    if (!type) return;
+    const m = STATES[type][0];
+    let minX = 9, maxX = -1, minY = 9, maxY = -1;
+    for (let y = 0; y < m.length; y++)
+      for (let x = 0; x < m.length; x++)
+        if (m[y][x]) {
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        }
+    const ox = cx - ((maxX - minX + 1) * size) / 2 - minX * size;
+    const oy = cy - ((maxY - minY + 1) * size) / 2 - minY * size;
+    for (let y = 0; y < m.length; y++)
+      for (let x = 0; x < m.length; x++)
+        if (m[y][x]) block(ox + x * size, oy + y * size, COLORS[type], size, alpha);
+  }
+
+  function drawBackground() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    const g = ctx.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, W * 0.75);
+    g.addColorStop(0, `hsla(${tierHue()}, 80%, 50%, 0.045)`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    for (const p of motes) {
+      ctx.fillStyle = `rgba(255,255,255,${p.a})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.3); ctx.fill();
+    }
+  }
+
+  function drawWell() {
+    const g = ctx.createLinearGradient(0, BOARD_Y, 0, BOARD_Y + BOARD_H);
+    g.addColorStop(0, 'rgba(255,255,255,0.045)');
+    g.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = g;
+    ctx.fillRect(BOARD_X, BOARD_Y, BOARD_W, BOARD_H);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.11)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 1; x < COLS; x++) {
+      const px = BOARD_X + x * CELL + 0.5;
+      ctx.moveTo(px, BOARD_Y); ctx.lineTo(px, BOARD_Y + BOARD_H);
+    }
+    for (let y = 1; y < ROWS; y++) {
+      const py = BOARD_Y + y * CELL + 0.5;
+      ctx.moveTo(BOARD_X, py); ctx.lineTo(BOARD_X + BOARD_W, py);
+    }
+    ctx.stroke();
+
+    let danger = 0;
+    for (let y = 0; y < 4 && !danger; y++)
+      for (let x = 0; x < COLS; x++) if (board[y][x]) { danger = 1; break; }
+
+    ctx.save();
+    const pulse = 0.55 + Math.sin(time / 320) * 0.18;
+    ctx.shadowColor = danger ? `rgba(255,40,60,${0.6 + Math.sin(time / 110) * 0.35})` : tierColor(60, 0.9);
+    ctx.shadowBlur = danger ? 13 : 7;
+    ctx.strokeStyle = danger ? `rgba(255,70,90,${pulse + 0.3})` : `rgba(255,255,255,${pulse})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(BOARD_X - 1, BOARD_Y - 1, BOARD_W + 2, BOARD_H + 2);
+    ctx.restore();
+  }
+
+  function drawStack() {
+    const rows = clearing ? clearing.rows : [];
+    const p = clearing ? clearing.t / CLEAR_TIME : 0;
+    for (let y = 0; y < ROWS; y++) {
+      const isClearing = rows.includes(y);
+      for (let x = 0; x < COLS; x++) {
+        if (!board[y][x]) continue;
+        const px = BOARD_X + x * CELL, py = BOARD_Y + y * CELL;
+        if (!isClearing) { block(px, py, COLORS[board[y][x]]); continue; }
+        const k = Math.pow(1 - p, 1.6);
+        const sz = CELL * k;
+        block(px + (CELL - sz) / 2, py + (CELL - sz) / 2, COLORS[board[y][x]], Math.max(2, sz), k);
+      }
+      if (isClearing) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = `rgba(255,255,255,${Math.max(0, 0.9 - p * 2.2)})`;
+        ctx.fillRect(BOARD_X, BOARD_Y + y * CELL, BOARD_W, CELL);
+        ctx.restore();
+      }
+    }
+  }
+
+  function drawPiece() {
+    if (dead || clearing) return;
+    const m = shape(piece), gy = ghostY(), color = COLORS[piece.type];
+
+    ctx.save();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.45;
+    ctx.shadowColor = color; ctx.shadowBlur = 3;
+    ctx.lineWidth = 2;
+    for (let y = 0; y < m.length; y++)
+      for (let x = 0; x < m.length; x++)
+        if (m[y][x] && gy + y >= 0)
+          ctx.strokeRect(BOARD_X + (piece.x + x) * CELL + 2, BOARD_Y + (gy + y) * CELL + 2, CELL - 4, CELL - 4);
+    ctx.restore();
+
+    const landed = collides(piece, 0, 1, 0);
+    const a = landed ? 0.72 + Math.sin(time / 70) * 0.28 : 1;
+    for (let y = 0; y < m.length; y++)
+      for (let x = 0; x < m.length; x++)
+        if (m[y][x] && piece.y + y >= 0)
+          block(BOARD_X + (piece.x + x) * CELL, BOARD_Y + (piece.y + y) * CELL, color, CELL, a);
+  }
+
+  function drawEffects() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const t of trails) {
+      ctx.fillStyle = t.color;
+      ctx.globalAlpha = t.life * (t.h ? 0.3 : 0.55);
+      if (t.h) ctx.fillRect(t.x + t.s * 0.22, t.y - t.h, t.s * 0.56, t.h);
+      else ctx.fillRect(t.x, t.y, t.s, t.s);
+    }
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.restore();
+
+    for (const t of texts) {
+      const e = 1 - t.life;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, t.life * 2.2);
+      ctx.textAlign = 'center';
+      ctx.font = `700 ${t.size}px ${F}`;
+      ls(t.size > 20 ? '0.1em' : '0.05em');
+      ctx.shadowColor = t.color; ctx.shadowBlur = 6;
+      ctx.fillStyle = t.color;
+      ctx.fillText(t.text, t.x, t.y - e * 34);
+      ls('0px');
+      ctx.restore();
+    }
+    ctx.textAlign = 'left';
+  }
+
+  function drawSidebars() {
+    const mini = CELL * 0.66;
+    caption('Hold', PAD, BOARD_Y - 11, holdUsed ? 0.22 : 0.4);
+    caption('Next', NEXT_X, BOARD_Y - 11);
+
+    panel(PAD, BOARD_Y, SIDE, SIDE, holdUsed ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.22)');
+    drawMini(hold, PAD + SIDE / 2, BOARD_Y + SIDE / 2, mini, holdUsed ? 0.32 : 1);
+
+    for (let i = 0; i < 3; i++) {
+      const py = BOARD_Y + i * (SIDE + 12);
+      panel(NEXT_X, py, SIDE, SIDE, i === 0 ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.14)');
+      drawMini(queue[i], NEXT_X + SIDE / 2, py + SIDE / 2, i === 0 ? mini : mini * 0.82, i === 0 ? 1 : 0.6);
+    }
+
+    caption('Score', PAD, BOARD_Y + 166);
+    readout(Math.floor(shownScore).toLocaleString(), PAD, BOARD_Y + 198, 30, '#fff');
+
+    const beating = score > best;
+    ctx.fillStyle = beating ? tierColor(66, 0.9) : 'rgba(255,255,255,0.4)';
+    ctx.font = `300 12px ${F}`;
+    ctx.fillText(`Best ${Math.max(best, score).toLocaleString()}`, PAD, BOARD_Y + 218);
+
+    caption('Lines cleared', PAD, BOARD_Y + 252);
+    readout(String(lines), PAD, BOARD_Y + 284, 30, '#fff');
+
+    caption('Difficulty', PAD, BOARD_Y + 320);
+    ctx.save();
+    ctx.shadowColor = tierColor(60); ctx.shadowBlur = 7;
+    readout(tierName(), PAD, BOARD_Y + 346, 22, tierColor(66));
+    ctx.restore();
+
+    const barY = BOARD_Y + 358;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    rr(ctx, PAD, barY, SIDE, 7, 3.5); ctx.fill();
+    const wFill = SIDE * ((lines % 10) / 10);
+    ctx.save();
+    ctx.shadowColor = tierColor(60); ctx.shadowBlur = 5;
+    ctx.fillStyle = tierColor(62);
+    rr(ctx, PAD, barY, Math.max(7, wFill), 7, 3.5); ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.44)';
+    ctx.font = `300 12px ${F}`;
+    const speed = dropInterval >= 100
+      ? `${(dropInterval / 1000).toFixed(2)}s`
+      : `${Math.round(dropInterval)}ms`;
+    ctx.fillText(`Level ${level}, ${10 - (lines % 10)} to go`, PAD, barY + 25);
+    ctx.fillText(`One row per ${speed}`, PAD, barY + 43);
+  }
+
+  function drawOverlays() {
+    if (flash > 0.001) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = `rgba(255,255,255,${flash * 0.5})`;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+    const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.85);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
+    for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
+  }
+
+  function drawDead() {
+    ctx.fillStyle = 'rgba(0,0,0,0.78)';
+    ctx.fillRect(BOARD_X, BOARD_Y, BOARD_W, BOARD_H);
+    const mx = BOARD_X + BOARD_W / 2, my = BOARD_Y + BOARD_H / 2;
+    ctx.textAlign = 'center';
+    caption('Final score', mx, my - 44, 0.45);
+    ctx.save();
+    ctx.shadowColor = tierColor(60); ctx.shadowBlur = 9;
+    readout(score.toLocaleString(), mx, my, 52, '#fff');
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = `300 14px ${F}`;
+    ctx.fillText(`${lines} lines at ${tierName().toLowerCase()} speed`, mx, my + 28);
+
+    if (newRecord) {
+      ctx.save();
+      ctx.shadowColor = tierColor(60); ctx.shadowBlur = 8;
+      ctx.fillStyle = tierColor(68);
+      ctx.font = `700 15px ${F}`;
+      ls('0.16em');
+      ctx.fillText('New best', mx, my + 52);
+      ls('0px');
+      ctx.restore();
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.font = `300 13px ${F}`;
+      ctx.fillText(`Best ${best.toLocaleString()}`, mx, my + 52);
+    }
+    ctx.fillStyle = `rgba(255,255,255,${0.5 + Math.sin(time / 300) * 0.3})`;
+    ctx.font = `500 13px ${F}`;
+    ls('0.14em');
+    ctx.fillText('Press Enter to play again', mx, my + 84);
+    ls('0px');
+    ctx.textAlign = 'left';
+  }
+
+  // ---------- loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(now - last, 100);
+    last = now;
+    time += dt;
+
+    if (!dead && !clearing) {
+      autoRepeat('ArrowLeft', -1, dt);
+      autoRepeat('ArrowRight', 1, dt);
+      autoRepeat('ArrowDown', 0, dt);
+      dropTimer += dt;
+      if (dropTimer >= dropInterval) { dropTimer = 0; move(0, 1); }
+      if (collides(piece, 0, 1, 0)) {
+        lockTimer += dt;
+        if (lockTimer >= lockDelay) lock();
+      } else lockTimer = 0;
+    }
+
+    if (clearing) {
+      clearing.t += dt;
+      if (clearing.t >= CLEAR_TIME) finishClear();
+    }
+
+    if (dead && !recorded) {
+      recorded = true;
+      if (score > best) { best = score; newRecord = true; writeHigh(best); }
+    }
+
+    // effects update
+    for (const p of particles) {
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vy += 0.0016 * dt;
+      p.vx *= 0.995;
+      p.life -= p.decay * dt;
+    }
+    particles = particles.filter(p => p.life > 0);
+    for (const t of trails) t.life -= dt / (t.h ? 180 : 120);
+    trails = trails.filter(t => t.life > 0);
+    for (const t of texts) t.life -= dt / 620;
+    texts = texts.filter(t => t.life > 0);
+    for (const m of motes) {
+      m.y -= m.sp * dt * 10;
+      if (m.y < -4) { m.y = H + 4; m.x = Math.random() * W; }
+    }
+    flash *= Math.pow(0.84, dt / 16);
+    shake *= Math.pow(0.86, dt / 16);
+    shownScore += (score - shownScore) * Math.min(1, dt / 90);
+    if (Math.abs(score - shownScore) < 0.6) shownScore = score;
+
+    // render
+    ctx.save();
+    if (shake > 0.1) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    drawBackground();
+    drawWell();
+    drawStack();
+    drawPiece();
+    drawEffects();
+    drawSidebars();
+    if (dead) drawDead();
+    drawOverlays();
+    ctx.restore();
+
+    requestAnimationFrame(frame);
+  }
+
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
