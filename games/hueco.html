@@ -139,7 +139,7 @@
   </div>
 </div>
  
-<div id="overlay">
+<div id="overlay" hidden>
   <div class="panel" id="panel"></div>
 </div>
  
@@ -384,18 +384,6 @@
     requestAnimationFrame(loop);
   }
  
-  function showStart(){
-    state = "start";
-    panel.innerHTML =
-      '<h2>Cómo se juega</h2>' +
-      '<p>Cae una fila con algunos huecos. Colócate en un hueco antes de que llegue al suelo.</p>' +
-      '<p>Cada 3 filas se suma una pantalla, hasta 4. Todas se mueven con el mismo control, así que busca la columna que está abierta en todas a la vez.</p>' +
-      '<p>Flechas o A / D para moverte. Flecha abajo, S o espacio para tirar la fila hacia abajo. En móvil, los botones.</p>' +
-      '<button id="go">Empezar</button>';
-    overlay.hidden = false;
-    document.getElementById("go").onclick = start;
-  }
- 
   function gameOver(){
     state = "over";
     overAt = Date.now();
@@ -477,7 +465,7 @@
   })();
  
   buildScreens();
-  showStart();
+  start();
   requestAnimationFrame(loop);
 })();
 </script>
