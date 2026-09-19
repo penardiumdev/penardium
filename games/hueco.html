@@ -79,11 +79,11 @@
     height:min(420px, calc((100dvh - 176px) / 2), calc((100vw - 44px) * 0.80));
   }
  
-  #pad{display:flex;gap:12px;touch-action:none}
+  #pad{display:flex;gap:10px;touch-action:none}
   #pad button{
     font-family:inherit;
     font-size:17px;
-    width:80px;height:44px;
+    width:68px;height:44px;
     background:var(--bg);
     color:var(--fg);
     border:2px solid var(--fg);
@@ -134,7 +134,8 @@
  
   <div id="pad">
     <button id="left" aria-label="Mover a la izquierda">&#9664;</button>
-    <button id="down" aria-label="Bajar la fila rápido">&#9660;</button>
+    <button id="down" aria-label="Acelerar la caída">&#9660;</button>
+    <button id="slam" aria-label="Bajar la fila de golpe">&#10515;</button>
     <button id="right" aria-label="Mover a la derecha">&#9654;</button>
   </div>
 </div>
@@ -214,6 +215,8 @@
   var spawnTimer = 0.7;
   var moveHeld = 0;      // -1 / 0 / 1
   var moveClock = 0;
+  var DELAY = 0.15;      // espera antes de auto-repetir
+  var REPEAT = 0.065;    // auto-repetición mantenida
   var dropping = false;  // bajada rápida
   var overAt = 0;
  
@@ -288,11 +291,49 @@
  
   function handleMove(dt){
     if (!moveHeld) { moveClock = 0; return; }
-    if (moveClock <= 0){
-      move(moveHeld);
-      moveClock = 0.13;
-    }
     moveClock -= dt;
+    var guard = 0;
+    while (moveClock <= 0 && guard++ < 4){
+      move(moveHeld);
+      moveClock += REPEAT;
+    }
+  }
+ 
+  // pulsación: siempre responde al instante, aunque la otra tecla siga bajada
+  function press(dir){
+    if (state !== "play") return;
+    moveHeld = dir;
+    move(dir);
+    moveClock = DELAY;
+  }
+ 
+  function rowKills(){
+    for (var s = 0; s < row.gaps.length; s++){
+      if (!row.gaps[s][col]) return true;
+    }
+    return false;
+  }
+ 
+  function clearRow(){
+    row = null;
+    score++;
+    scoreEl.textContent = score;
+    var want = Math.min(4, 1 + Math.floor(score / 3));
+    if (want !== screens){
+      screens = want;
+      buildScreens();
+      toast("pantalla " + screens + ": mismo control, misma columna");
+      spawnTimer = 1.1;
+    } else {
+      spawnTimer = Math.max(0.28, 0.65 - score * 0.012);
+    }
+  }
+ 
+  // espacio: resuelve la fila al instante, como el hard drop de Tetris
+  function hardDrop(){
+    if (state !== "play" || !row) return;
+    if (rowKills()) { row.y = PLAYER_Y; gameOver(); return; }
+    clearRow();
   }
  
   function update(dt){
@@ -304,26 +345,12 @@
       row.y += speed() * (dropping ? 5.5 : 1) * dt;
  
       // choque: comprueba también si la fila cruzó la franja en un solo frame
-      if (row.y + CELL > PLAYER_Y && prev < PLAYER_Y + CELL){
-        for (var s = 0; s < row.gaps.length; s++){
-          if (!row.gaps[s][col]) { gameOver(); return; }
-        }
+      if (row.y + CELL > PLAYER_Y && prev < PLAYER_Y + CELL && rowKills()){
+        gameOver();
+        return;
       }
  
-      if (row.y >= PLAYER_Y + CELL){
-        row = null;
-        score++;
-        scoreEl.textContent = score;
-        var want = Math.min(4, 1 + Math.floor(score / 3));
-        if (want !== screens){
-          screens = want;
-          buildScreens();
-          toast("pantalla " + screens + ": mismo control, misma columna");
-          spawnTimer = 1.1;
-        } else {
-          spawnTimer = Math.max(0.28, 0.65 - score * 0.012);
-        }
-      }
+      if (row.y >= PLAYER_Y + CELL) clearRow();
     } else {
       spawnTimer -= dt;
       if (spawnTimer <= 0) spawnRow();
@@ -424,16 +451,20 @@
       if ((k === " " || k === "enter") && !e.repeat && Date.now() - overAt > 500) start();
       return;
     }
-    if (k === "arrowleft" || k === "a"){ keys.l = true; if (!moveHeld) { move(-1); moveClock = 0.22; } moveHeld = -1; }
-    if (k === "arrowright" || k === "d"){ keys.r = true; if (!moveHeld) { move(1); moveClock = 0.22; } moveHeld = 1; }
-    if (k === "arrowdown" || k === "s" || k === " ") dropping = true;
+    if (k === "arrowleft" || k === "a"){ keys.l = true; if (!e.repeat) press(-1); }
+    if (k === "arrowright" || k === "d"){ keys.r = true; if (!e.repeat) press(1); }
+    if (k === "arrowdown" || k === "s") dropping = true;
+    if (k === " " && !e.repeat) hardDrop();
   });
   window.addEventListener("keyup", function(e){
     var k = e.key.toLowerCase();
     if (k === "arrowleft" || k === "a") keys.l = false;
     if (k === "arrowright" || k === "d") keys.r = false;
-    if (k === "arrowdown" || k === "s" || k === " ") dropping = false;
-    moveHeld = keys.l ? -1 : (keys.r ? 1 : 0);
+    if (k === "arrowdown" || k === "s") dropping = false;
+    // si sueltas la que mandaba, pasa el turno a la otra si sigue pulsada
+    if (moveHeld === -1 && !keys.l) moveHeld = keys.r ? 1 : 0;
+    else if (moveHeld === 1 && !keys.r) moveHeld = keys.l ? -1 : 0;
+    if (moveHeld) moveClock = Math.max(moveClock, DELAY);
   });
   window.addEventListener("blur", function(){ keys = {}; moveHeld = 0; dropping = false; });
  
@@ -442,8 +473,7 @@
     var el = document.getElementById(id);
     var down = function(e){
       e.preventDefault();
-      if (state !== "play") return;
-      move(dir); moveClock = 0.22; moveHeld = dir;
+      press(dir);
     };
     var up = function(){ if (moveHeld === dir) moveHeld = 0; };
     el.addEventListener("pointerdown", down);
@@ -463,6 +493,11 @@
     el.addEventListener("pointercancel", off);
     el.addEventListener("pointerleave", off);
   })();
+ 
+  document.getElementById("slam").addEventListener("pointerdown", function(e){
+    e.preventDefault();
+    hardDrop();
+  });
  
   buildScreens();
   start();
