@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>HUECO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#efe7d4;
+    --fg:#141210;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){ --bg:#0e0d0b; --fg:#efe7d4; }
+  }
+  :root[data-theme="dark"]{ --bg:#0e0d0b; --fg:#efe7d4; }
+ 
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--fg);
+    font-family:"Silkscreen","Courier New",monospace;
+    overscroll-behavior:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #app{
+    height:100dvh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    padding:10px 10px 14px;
+  }
+  header{
+    width:100%;
+    max-width:640px;
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+  }
+  h1{
+    font-size:clamp(20px,5vw,30px);
+    font-weight:700;
+    letter-spacing:.14em;
+    margin:0;
+  }
+  .stats{display:flex;gap:14px;font-size:11px;letter-spacing:.06em;opacity:.85}
+  .stats b{font-weight:700}
+  #toast{
+    height:16px;
+    font-size:11px;
+    letter-spacing:.08em;
+    opacity:0;
+  }
+  #toast.on{opacity:1}
+  #screens{
+    flex:1;
+    display:grid;
+    gap:12px;
+    place-content:center;
+    justify-items:center;
+  }
+  #screens[data-n="2"],#screens[data-n="3"],#screens[data-n="4"]{grid-template-columns:repeat(2,auto)}
+  #screens canvas{
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    width:auto;
+    display:block;
+  }
+  #screens[data-n="1"] canvas{height:min(58vh,420px)}
+  #screens[data-n="2"] canvas{height:min(54vh,400px,calc((100vw - 44px) * 0.80))}
+  #screens[data-n="3"] canvas,#screens[data-n="4"] canvas{
+    height:min(420px, calc((100dvh - 176px) / 2), calc((100vw - 44px) * 0.80));
+  }
+ 
+  #pad{display:flex;gap:12px;touch-action:none}
+  #pad button{
+    font-family:inherit;
+    font-size:17px;
+    width:80px;height:44px;
+    background:var(--bg);
+    color:var(--fg);
+    border:2px solid var(--fg);
+    cursor:pointer;
+  }
+  #pad button:active{background:var(--fg);color:var(--bg)}
+  #pad button:focus-visible{outline:2px dashed var(--fg);outline-offset:3px}
+ 
+  #overlay{
+    position:fixed;inset:0;
+    background:var(--bg);
+    display:flex;align-items:center;justify-content:center;
+    padding:20px;
+  }
+  #overlay[hidden]{display:none}
+  .panel{
+    border:2px solid var(--fg);
+    padding:22px;
+    max-width:420px;
+    width:100%;
+    text-align:left;
+  }
+  .panel h2{margin:0 0 14px;font-size:16px;letter-spacing:.1em;font-weight:700}
+  .panel p{font-size:11px;line-height:1.9;margin:0 0 10px;letter-spacing:.02em}
+  .panel .go{font-size:13px;line-height:1.8}
+  .panel button{
+    font-family:inherit;font-size:12px;letter-spacing:.08em;
+    margin-top:12px;padding:12px 18px;
+    background:var(--fg);color:var(--bg);
+    border:2px solid var(--fg);cursor:pointer;width:100%;
+  }
+  .panel button:active{background:var(--bg);color:var(--fg)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Hueco</h1>
+    <div class="stats">
+      <span>filas <b id="score">0</b></span>
+      <span>pantallas <b id="scr">1</b></span>
+      <span>récord <b id="best">0</b></span>
+    </div>
+  </header>
+ 
+  <div id="toast"></div>
+  <div id="screens" data-n="1"></div>
+ 
+  <div id="pad">
+    <button id="left" aria-label="Mover a la izquierda">&#9664;</button>
+    <button id="down" aria-label="Bajar la fila rápido">&#9660;</button>
+    <button id="right" aria-label="Mover a la derecha">&#9654;</button>
+  </div>
+</div>
+ 
+<div id="overlay">
+  <div class="panel" id="panel"></div>
+</div>
+ 
+<script>
+(function(){
+  "use strict";
+ 
+  var COLS = 7, CELL = 8;
+  var W = COLS * CELL;          // 56
+  var PLAYER_Y = 10 * CELL;     // 80
+  var H = PLAYER_Y + CELL + 2;  // 90
+  var FLOOR_Y = PLAYER_Y + CELL;
+ 
+  var PERSON_A = [
+    "..####..",
+    "..#..#..",
+    "..####..",
+    "########",
+    "..####..",
+    "..####..",
+    "..#..#..",
+    ".##..##."
+  ];
+  var PERSON_B = [
+    "..####..",
+    "..#..#..",
+    "..####..",
+    "########",
+    "..####..",
+    "..####..",
+    ".##..##.",
+    "..#..#.."
+  ];
+  var BLOCK = [
+    "########",
+    "#......#",
+    "#.####.#",
+    "#.####.#",
+    "#.####.#",
+    "#.####.#",
+    "#......#",
+    "########"
+  ];
+ 
+  var screensEl = document.getElementById("screens");
+  var scoreEl = document.getElementById("score");
+  var scrEl = document.getElementById("scr");
+  var bestEl = document.getElementById("best");
+  var toastEl = document.getElementById("toast");
+  var overlay = document.getElementById("overlay");
+  var panel = document.getElementById("panel");
+ 
+  var BG = "#0e0d0b", FG = "#efe7d4";
+  function refreshColors(){
+    var cs = getComputedStyle(document.documentElement);
+    var b = cs.getPropertyValue("--bg").trim();
+    var f = cs.getPropertyValue("--fg").trim();
+    if (b) BG = b;
+    if (f) FG = f;
+  }
+  refreshColors();
+  setInterval(refreshColors, 600);
+ 
+  var ctxs = [];
+  var state = "start";
+  var screens = 1;
+  var col = 3;
+  var step = 0;          // frame de animación de piernas
+  var score = 0;
+  var best = 0;
+  var row = null;        // {y, gaps:[Set,...]}
+  var spawnTimer = 0.7;
+  var moveHeld = 0;      // -1 / 0 / 1
+  var moveClock = 0;
+  var dropping = false;  // bajada rápida
+  var overAt = 0;
+ 
+  try { best = parseInt(localStorage.getItem("hueco.best") || "0", 10) || 0; } catch(e){}
+  bestEl.textContent = best;
+ 
+  function buildScreens(){
+    screensEl.innerHTML = "";
+    screensEl.setAttribute("data-n", String(screens));
+    ctxs = [];
+    for (var i = 0; i < screens; i++){
+      var c = document.createElement("canvas");
+      c.width = W; c.height = H;
+      screensEl.appendChild(c);
+      var ctx = c.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+      ctxs.push(ctx);
+    }
+    scrEl.textContent = screens;
+  }
+ 
+  function spawnRow(){
+    var safe = (Math.random() * COLS) | 0;      // columna que sirve para TODAS las pantallas
+    var extras = screens === 1 ? 2 : 1;
+    var gaps = [];
+ 
+    // columnas donde puede ir un hueco extra: ni la segura ni pegadas a ella
+    var pool = [];
+    for (var c = 0; c < COLS; c++){
+      if (c === safe || c === safe - 1 || c === safe + 1) continue;
+      pool.push(c);
+    }
+    for (var i = pool.length - 1; i > 0; i--){
+      var j = (Math.random() * (i + 1)) | 0;
+      var t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+ 
+    var taken = 0;
+    for (var s = 0; s < screens; s++){
+      var set = {};
+      set[safe] = true;
+      var placed = 0;
+      while (placed < extras && taken < pool.length){
+        var pick = pool[taken++];                      // sin repetir entre pantallas
+        if (set[pick - 1] || set[pick + 1]) continue;  // nunca pegado a otro hueco
+        set[pick] = true;
+        placed++;
+      }
+      gaps.push(set);
+    }
+    row = { y: -CELL, gaps: gaps };
+  }
+ 
+  function speed(){
+    var v = 17 + score * 1.9 + (screens - 1) * 5;
+    return Math.min(v, 95);
+  }
+ 
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add("on");
+    clearTimeout(toast.t);
+    toast.t = setTimeout(function(){ toastEl.classList.remove("on"); }, 1400);
+  }
+ 
+  function move(dir){
+    var next = col + dir;
+    if (next < 0 || next > COLS - 1) return;
+    col = next;
+    step ^= 1;
+  }
+ 
+  function handleMove(dt){
+    if (!moveHeld) { moveClock = 0; return; }
+    if (moveClock <= 0){
+      move(moveHeld);
+      moveClock = 0.13;
+    }
+    moveClock -= dt;
+  }
+ 
+  function update(dt){
+    if (state !== "play") return;
+    handleMove(dt);
+ 
+    if (row){
+      var prev = row.y;
+      row.y += speed() * (dropping ? 5.5 : 1) * dt;
+ 
+      // choque: comprueba también si la fila cruzó la franja en un solo frame
+      if (row.y + CELL > PLAYER_Y && prev < PLAYER_Y + CELL){
+        for (var s = 0; s < row.gaps.length; s++){
+          if (!row.gaps[s][col]) { gameOver(); return; }
+        }
+      }
+ 
+      if (row.y >= PLAYER_Y + CELL){
+        row = null;
+        score++;
+        scoreEl.textContent = score;
+        var want = Math.min(4, 1 + Math.floor(score / 3));
+        if (want !== screens){
+          screens = want;
+          buildScreens();
+          toast("pantalla " + screens + ": mismo control, misma columna");
+          spawnTimer = 1.1;
+        } else {
+          spawnTimer = Math.max(0.28, 0.65 - score * 0.012);
+        }
+      }
+    } else {
+      spawnTimer -= dt;
+      if (spawnTimer <= 0) spawnRow();
+    }
+  }
+ 
+  function sprite(ctx, art, px, py){
+    for (var y = 0; y < art.length; y++){
+      var line = art[y];
+      for (var x = 0; x < line.length; x++){
+        if (line.charAt(x) === "#") ctx.fillRect(px + x, py + y, 1, 1);
+      }
+    }
+  }
+ 
+  function draw(){
+    for (var s = 0; s < ctxs.length; s++){
+      var ctx = ctxs[s];
+      ctx.fillStyle = BG;
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = FG;
+ 
+      // cuadrícula tenue
+      ctx.globalAlpha = 0.13;
+      for (var gx = CELL; gx < W; gx += CELL) ctx.fillRect(gx, 1, 1, FLOOR_Y - 1);
+      for (var gy = CELL; gy < FLOOR_Y; gy += CELL) ctx.fillRect(1, gy, W - 2, 1);
+      // columna donde estás
+      ctx.globalAlpha = 0.16;
+      ctx.fillRect(col * CELL, 1, CELL, FLOOR_Y - 1);
+      ctx.globalAlpha = 1;
+ 
+      // marco punteado
+      for (var x = 0; x < W; x += 2) ctx.fillRect(x, 0, 1, 1);
+      for (var y = 0; y < FLOOR_Y; y += 2){ ctx.fillRect(0, y, 1, 1); ctx.fillRect(W - 1, y, 1, 1); }
+      // suelo
+      ctx.fillRect(0, FLOOR_Y, W, 1);
+ 
+      if (row){
+        var ry = Math.round(row.y);
+        for (var c = 0; c < COLS; c++){
+          if (!row.gaps[s][c]) sprite(ctx, BLOCK, c * CELL, ry);
+        }
+      }
+ 
+      if (state !== "over" || Math.floor(Date.now() / 160) % 2 === 0){
+        sprite(ctx, step ? PERSON_B : PERSON_A, col * CELL, PLAYER_Y);
+      }
+    }
+  }
+ 
+  var last = 0;
+  function loop(t){
+    if (!last) last = t;
+    var dt = Math.min((t - last) / 1000, 0.05);
+    last = t;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+ 
+  function showStart(){
+    state = "start";
+    panel.innerHTML =
+      '<h2>Cómo se juega</h2>' +
+      '<p>Cae una fila con algunos huecos. Colócate en un hueco antes de que llegue al suelo.</p>' +
+      '<p>Cada 3 filas se suma una pantalla, hasta 4. Todas se mueven con el mismo control, así que busca la columna que está abierta en todas a la vez.</p>' +
+      '<p>Flechas o A / D para moverte. Flecha abajo, S o espacio para tirar la fila hacia abajo. En móvil, los botones.</p>' +
+      '<button id="go">Empezar</button>';
+    overlay.hidden = false;
+    document.getElementById("go").onclick = start;
+  }
+ 
+  function gameOver(){
+    state = "over";
+    overAt = Date.now();
+    dropping = false;
+    if (score > best){
+      best = score;
+      bestEl.textContent = best;
+      try { localStorage.setItem("hueco.best", String(best)); } catch(e){}
+    }
+    panel.innerHTML =
+      '<h2>Te alcanzó la fila</h2>' +
+      '<p class="go">Filas esquivadas: ' + score + '<br>Pantallas alcanzadas: ' + screens + '<br>Récord: ' + best + '</p>' +
+      '<button id="go">Jugar otra vez</button>';
+    overlay.hidden = false;
+    document.getElementById("go").onclick = start;
+  }
+ 
+  function start(){
+    overlay.hidden = true;
+    score = 0;
+    screens = 1;
+    col = 3;
+    row = null;
+    spawnTimer = 0.8;
+    moveHeld = 0;
+    dropping = false;
+    scoreEl.textContent = "0";
+    buildScreens();
+    state = "play";
+  }
+ 
+  // teclado
+  var keys = {};
+  window.addEventListener("keydown", function(e){
+    var k = e.key.toLowerCase();
+    if (["arrowleft","arrowright","arrowdown","a","d","s"," "].indexOf(k) >= 0) e.preventDefault();
+    if (state !== "play"){
+      if ((k === " " || k === "enter") && !e.repeat && Date.now() - overAt > 500) start();
+      return;
+    }
+    if (k === "arrowleft" || k === "a"){ keys.l = true; if (!moveHeld) { move(-1); moveClock = 0.22; } moveHeld = -1; }
+    if (k === "arrowright" || k === "d"){ keys.r = true; if (!moveHeld) { move(1); moveClock = 0.22; } moveHeld = 1; }
+    if (k === "arrowdown" || k === "s" || k === " ") dropping = true;
+  });
+  window.addEventListener("keyup", function(e){
+    var k = e.key.toLowerCase();
+    if (k === "arrowleft" || k === "a") keys.l = false;
+    if (k === "arrowright" || k === "d") keys.r = false;
+    if (k === "arrowdown" || k === "s" || k === " ") dropping = false;
+    moveHeld = keys.l ? -1 : (keys.r ? 1 : 0);
+  });
+  window.addEventListener("blur", function(){ keys = {}; moveHeld = 0; dropping = false; });
+ 
+  // botones táctiles
+  function bindPad(id, dir){
+    var el = document.getElementById(id);
+    var down = function(e){
+      e.preventDefault();
+      if (state !== "play") return;
+      move(dir); moveClock = 0.22; moveHeld = dir;
+    };
+    var up = function(){ if (moveHeld === dir) moveHeld = 0; };
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+    el.addEventListener("pointerleave", up);
+  }
+  bindPad("left", -1);
+  bindPad("right", 1);
+ 
+  (function(){
+    var el = document.getElementById("down");
+    var on = function(e){ e.preventDefault(); if (state === "play") dropping = true; };
+    var off = function(){ dropping = false; };
+    el.addEventListener("pointerdown", on);
+    el.addEventListener("pointerup", off);
+    el.addEventListener("pointercancel", off);
+    el.addEventListener("pointerleave", off);
+  })();
+ 
+  buildScreens();
+  showStart();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
+ 
