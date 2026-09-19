@@ -98,6 +98,31 @@
     display:flex;align-items:center;justify-content:center;
     padding:20px;
   }
+  #settings{
+    position:fixed;inset:0;
+    background:var(--bg);
+    display:flex;align-items:center;justify-content:center;
+    padding:20px;
+    z-index:2;
+  }
+  #settings[hidden]{display:none}
+  #cog{
+    font-family:inherit;font-size:11px;letter-spacing:.06em;
+    background:none;color:var(--fg);border:none;border-bottom:1px solid var(--fg);
+    padding:0 0 1px;cursor:pointer;
+  }
+  .lbl{margin:16px 0 8px !important;letter-spacing:.06em;opacity:.75}
+  .opts{display:flex;flex-wrap:wrap;gap:8px}
+  #settings .opts button{
+    font-family:inherit;font-size:11px;letter-spacing:.04em;
+    display:flex;align-items:center;gap:7px;
+    padding:9px 11px;margin:0;width:auto;
+    background:var(--bg);color:var(--fg);
+    border:2px solid var(--fg);cursor:pointer;
+  }
+  #settings .opts button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+  .opts .sw{width:12px;height:12px;border:1px solid currentColor;display:inline-block;position:relative}
+  .opts .sw i{position:absolute;inset:3px}
   #overlay[hidden]{display:none}
   .panel{
     border:2px solid var(--fg);
@@ -126,6 +151,7 @@
       <span>filas <b id="score">0</b></span>
       <span>pantallas <b id="scr">1</b></span>
       <span>récord <b id="best">0</b></span>
+      <button id="cog" aria-label="Ajustes">ajustes</button>
     </div>
   </header>
  
@@ -137,6 +163,17 @@
     <button id="down" aria-label="Acelerar la caída">&#9660;</button>
     <button id="slam" aria-label="Bajar la fila de golpe">&#10515;</button>
     <button id="right" aria-label="Mover a la derecha">&#9654;</button>
+  </div>
+</div>
+ 
+<div id="settings" hidden>
+  <div class="panel">
+    <h2>Ajustes</h2>
+    <p class="lbl">Pantallas como máximo</p>
+    <div class="opts" id="optScreens"></div>
+    <p class="lbl">Tema</p>
+    <div class="opts" id="optThemes"></div>
+    <button id="closeSettings">Seguir jugando</button>
   </div>
 </div>
  
@@ -191,6 +228,7 @@
   var bestEl = document.getElementById("best");
   var toastEl = document.getElementById("toast");
   var overlay = document.getElementById("overlay");
+  var settingsEl = document.getElementById("settings");
   var panel = document.getElementById("panel");
  
   var BG = "#0e0d0b", FG = "#efe7d4";
@@ -301,7 +339,7 @@
  
   // pulsación: siempre responde al instante, aunque la otra tecla siga bajada
   function press(dir){
-    if (state !== "play") return;
+    if (state !== "play" || paused) return;
     moveHeld = dir;
     move(dir);
     moveClock = DELAY;
@@ -318,7 +356,7 @@
     row = null;
     score++;
     scoreEl.textContent = score;
-    var want = Math.min(4, 1 + Math.floor(score / 3));
+    var want = Math.min(maxScreens, 1 + Math.floor(score / 3));
     if (want !== screens){
       screens = want;
       buildScreens();
@@ -331,13 +369,13 @@
  
   // espacio: resuelve la fila al instante, como el hard drop de Tetris
   function hardDrop(){
-    if (state !== "play" || !row) return;
+    if (state !== "play" || paused || !row) return;
     if (rowKills()) { row.y = PLAYER_Y; gameOver(); return; }
     clearRow();
   }
  
   function update(dt){
-    if (state !== "play") return;
+    if (state !== "play" || paused) return;
     handleMove(dt);
  
     if (row){
@@ -356,6 +394,106 @@
       if (spawnTimer <= 0) spawnRow();
     }
   }
+ 
+  var THEMES = [
+    { id:"auto",    name:"Tinta",     bg:null,      fg:null },
+    { id:"papel",   name:"Papel",     bg:"#efe7d4", fg:"#141210" },
+    { id:"fosforo", name:"Fósforo",   bg:"#04140a", fg:"#4dff88" },
+    { id:"ambar",   name:"Ámbar",     bg:"#180c00", fg:"#ffb02e" },
+    { id:"gameboy", name:"Game Boy",  bg:"#0f380f", fg:"#9bbc0f" },
+    { id:"plano",   name:"Cianotipo", bg:"#0b1e3a", fg:"#d6e6ff" },
+    { id:"chicle",  name:"Chicle",    bg:"#2a0a24", fg:"#ff7bd5" }
+  ];
+ 
+  var theme = "auto";
+  var maxScreens = 4;
+  var paused = false;
+ 
+  try {
+    var ts = localStorage.getItem("hueco.theme");
+    if (ts) theme = ts;
+    var ms = parseInt(localStorage.getItem("hueco.max") || "4", 10);
+    if (ms >= 1 && ms <= 4) maxScreens = ms;
+  } catch(e){}
+ 
+  function applyTheme(id){
+    theme = id;
+    var root = document.documentElement;
+    var t = null;
+    for (var i = 0; i < THEMES.length; i++) if (THEMES[i].id === id) t = THEMES[i];
+    if (!t || !t.bg){
+      root.style.removeProperty("--bg");
+      root.style.removeProperty("--fg");
+    } else {
+      root.style.setProperty("--bg", t.bg);
+      root.style.setProperty("--fg", t.fg);
+    }
+    refreshColors();
+    try { localStorage.setItem("hueco.theme", id); } catch(e){}
+  }
+ 
+  function setMaxScreens(n){
+    maxScreens = n;
+    try { localStorage.setItem("hueco.max", String(n)); } catch(e){}
+    var want = Math.min(maxScreens, 1 + Math.floor(score / 3));
+    if (want !== screens){
+      screens = want;
+      buildScreens();
+    }
+    row = null;                 // la fila en curso ya no encaja con el nº de pantallas
+    spawnTimer = 0.7;
+  }
+ 
+  function buildSettings(){
+    var sc = document.getElementById("optScreens");
+    sc.innerHTML = "";
+    for (var n = 1; n <= 4; n++){
+      (function(n){
+        var b = document.createElement("button");
+        b.textContent = n;
+        b.setAttribute("aria-pressed", n === maxScreens ? "true" : "false");
+        b.onclick = function(){ setMaxScreens(n); buildSettings(); };
+        sc.appendChild(b);
+      })(n);
+    }
+    var th = document.getElementById("optThemes");
+    th.innerHTML = "";
+    THEMES.forEach(function(t){
+      var b = document.createElement("button");
+      var sw = document.createElement("span");
+      sw.className = "sw";
+      var dot = document.createElement("i");
+      if (t.bg){
+        sw.style.background = t.bg;
+        sw.style.borderColor = t.fg;
+        dot.style.background = t.fg;
+      }
+      sw.appendChild(dot);
+      b.appendChild(sw);
+      b.appendChild(document.createTextNode(t.name));
+      b.setAttribute("aria-pressed", t.id === theme ? "true" : "false");
+      b.onclick = function(){ applyTheme(t.id); buildSettings(); };
+      th.appendChild(b);
+    });
+  }
+ 
+  function openSettings(){
+    paused = true;
+    moveHeld = 0;
+    dropping = false;
+    buildSettings();
+    settingsEl.hidden = false;
+  }
+ 
+  function closeSettings(){
+    settingsEl.hidden = true;
+    paused = false;
+    last = 0;
+  }
+ 
+  document.getElementById("cog").onclick = openSettings;
+  document.getElementById("closeSettings").onclick = closeSettings;
+  applyTheme(theme);
  
   function sprite(ctx, art, px, py){
     for (var y = 0; y < art.length; y++){
@@ -447,8 +585,10 @@
   window.addEventListener("keydown", function(e){
     var k = e.key.toLowerCase();
     if (["arrowleft","arrowright","arrowdown","a","d","s"," "].indexOf(k) >= 0) e.preventDefault();
+    if (k === "escape"){ settingsEl.hidden ? openSettings() : closeSettings(); return; }
+    if (paused) return;
     if (state !== "play"){
-      if ((k === " " || k === "enter") && !e.repeat && Date.now() - overAt > 500) start();
+      if (state === "over" && (k === " " || k === "enter") && !e.repeat && Date.now() - overAt > 500) start();
       return;
     }
     if (k === "arrowleft" || k === "a"){ keys.l = true; if (!e.repeat) press(-1); }
@@ -486,7 +626,7 @@
  
   (function(){
     var el = document.getElementById("down");
-    var on = function(e){ e.preventDefault(); if (state === "play") dropping = true; };
+    var on = function(e){ e.preventDefault(); if (state === "play" && !paused) dropping = true; };
     var off = function(){ dropping = false; };
     el.addEventListener("pointerdown", on);
     el.addEventListener("pointerup", off);
